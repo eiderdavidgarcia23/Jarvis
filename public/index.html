@@ -220,8 +220,26 @@ vozSelector.addEventListener('change', () => {
 let ubicacionTexto = '';
 if (navigator.geolocation) {
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      ubicacionTexto = `${pos.coords.latitude}, ${pos.coords.longitude}`;
+    async (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      ubicacionTexto = `${lat}, ${lon}`;
+
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
+          { headers: { 'Accept-Language': 'es' } }
+        );
+        const data = await res.json();
+        const dir = data.address || {};
+        const ciudad = dir.city || dir.town || dir.village || dir.municipality || '';
+        const pais = dir.country || '';
+        if (ciudad) {
+          ubicacionTexto = pais ? `${ciudad}, ${pais}` : ciudad;
+        }
+      } catch (err) {
+        console.log('No se pudo geocodificar la ubicacion:', err.message);
+      }
     },
     (err) => {
       console.log('No se pudo obtener ubicacion:', err.message);
