@@ -2,79 +2,118 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Jarvis</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>J.A.R.V.I.S.</title>
 <style>
-  body {
-    background: #0a0e1a;
-    color: #00e5ff;
-    font-family: 'Courier New', monospace;
+  * { box-sizing: border-box; }
+  html, body {
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
+    height: 100%;
+    background: #05070d;
+    color: #00e5ff;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
   }
+  body { display: flex; flex-direction: column; }
   header {
     text-align: center;
-    padding: 15px;
-    font-size: 24px;
-    letter-spacing: 4px;
-    border-bottom: 1px solid #00e5ff44;
+    padding: clamp(8px, 2vh, 16px);
+    font-size: clamp(16px, 4vw, 24px);
+    letter-spacing: clamp(2px, 1vw, 6px);
+    border-bottom: 1px solid #00e5ff33;
+    flex-shrink: 0;
+  }
+  #orbContainer {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    position: relative;
+  }
+  #orbCanvas {
+    width: min(70vw, 60vh);
+    height: min(70vw, 60vh);
+    max-width: 420px;
+    max-height: 420px;
+  }
+  #estado {
+    position: absolute;
+    bottom: 6%;
+    font-size: clamp(11px, 2.5vw, 14px);
+    letter-spacing: 2px;
+    opacity: 0.7;
+    text-transform: uppercase;
+  }
+  #vozSelectorWrap {
+    position: absolute;
+    top: 2%;
+    right: 3%;
+    font-size: clamp(10px, 2vw, 12px);
+  }
+  #vozSelector {
+    background: #1a2332;
+    color: #00e5ff;
+    border: 1px solid #00e5ff44;
+    border-radius: 6px;
+    padding: 4px;
+    max-width: 38vw;
   }
   #chat {
-    flex: 1;
+    max-height: 22vh;
     overflow-y: auto;
-    padding: 15px;
+    padding: 8px clamp(10px, 3vw, 20px);
+    flex-shrink: 0;
   }
   .msg {
-    margin: 10px 0;
-    padding: 10px 14px;
+    margin: 6px 0;
+    padding: 8px 12px;
     border-radius: 8px;
-    max-width: 80%;
+    max-width: 85%;
+    font-size: clamp(13px, 2.2vw, 15px);
     line-height: 1.4;
   }
-  .user {
-    background: #1a2332;
-    margin-left: auto;
-    text-align: right;
-    color: #ffffff;
-  }
-  .jarvis {
-    background: #00e5ff11;
-    border: 1px solid #00e5ff33;
-    color: #00e5ff;
-  }
+  .user { background: #1a2332; margin-left: auto; text-align: right; color: #ffffff; }
+  .jarvis { background: #00e5ff11; border: 1px solid #00e5ff33; color: #00e5ff; }
   #inputArea {
     display: flex;
-    padding: 12px;
-    border-top: 1px solid #00e5ff44;
+    padding: clamp(8px, 2vw, 14px);
+    border-top: 1px solid #00e5ff33;
     gap: 8px;
+    flex-shrink: 0;
+    padding-bottom: max(clamp(8px, 2vw, 14px), env(safe-area-inset-bottom));
   }
   #texto {
-    flex: 1;
-    background: #1a2332;
-    border: 1px solid #00e5ff44;
-    color: white;
-    padding: 10px;
-    border-radius: 6px;
-    font-size: 16px;
+    flex: 1; min-width: 0;
+    background: #1a2332; border: 1px solid #00e5ff44; color: white;
+    padding: 10px; border-radius: 6px; font-size: 16px;
   }
   button {
-    background: #00e5ff;
-    color: #0a0e1a;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 6px;
-    font-weight: bold;
-    font-size: 16px;
+    background: #00e5ff; color: #05070d; border: none;
+    padding: 10px 16px; border-radius: 6px; font-weight: bold;
+    font-size: 16px; flex-shrink: 0;
   }
   button:active { opacity: 0.7; }
+  @media (min-width: 900px) {
+    #orbCanvas { width: min(35vw, 50vh); height: min(35vw, 50vh); }
+    #chat { max-height: 28vh; }
+    .msg { max-width: 60%; }
+  }
 </style>
 </head>
 <body>
 
 <header>J.A.R.V.I.S.</header>
+
+<div id="orbContainer">
+  <div id="vozSelectorWrap">
+    <select id="vozSelector"><option>Cargando voces...</option></select>
+  </div>
+  <canvas id="orbCanvas"></canvas>
+  <div id="estado">En reposo</div>
+</div>
+
 <div id="chat"></div>
 
 <div id="inputArea">
@@ -84,23 +123,164 @@
 </div>
 
 <script>
+// ===== ORBE ANIMADO =====
+const canvas = document.getElementById('orbCanvas');
+const ctx = canvas.getContext('2d');
+let estadoActual = 'reposo';
+const estadoLabel = document.getElementById('estado');
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const NUM_PARTICULAS = 90;
+let particulas = [];
+for (let i = 0; i < NUM_PARTICULAS; i++) {
+  particulas.push({ ang: Math.random() * Math.PI * 2, alt: Math.random() * Math.PI * 2, r: 0.7 + Math.random() * 0.3 });
+}
+
+let t = 0;
+function animar() {
+  requestAnimationFrame(animar);
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2;
+  const base = Math.min(w, h) * 0.28;
+
+  let velocidad = 0.01, amplitud = 1, color = '0,229,255';
+  if (estadoActual === 'escuchando') { velocidad = 0.03; amplitud = 1.25; color = '0,255,180'; }
+  if (estadoActual === 'hablando')   { velocidad = 0.05; amplitud = 1.5 + Math.sin(t*0.3)*0.15; color = '0,229,255'; }
+  t += velocidad * 10;
+
+  const nucleoR = base * 0.35 * amplitud;
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, nucleoR * 1.8);
+  grad.addColorStop(0, `rgba(${color},0.9)`);
+  grad.addColorStop(1, `rgba(${color},0)`);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, nucleoR * 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, nucleoR, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255,255,255,0.9)`;
+  ctx.fill();
+
+  particulas.forEach((p) => {
+    p.ang += velocidad * (0.5 + p.r * 0.5);
+    const radio = base * amplitud * p.r;
+    const x = cx + Math.cos(p.ang) * radio;
+    const y = cy + Math.sin(p.ang) * radio * Math.cos(p.alt + t * 0.02);
+    ctx.beginPath();
+    ctx.arc(x, y, Math.max(1, w * 0.004), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${color},${0.5 + 0.5 * p.r})`;
+    ctx.fill();
+  });
+}
+animar();
+
+function setEstado(nuevo, txt) {
+  estadoActual = nuevo;
+  estadoLabel.textContent = txt;
+}
+
+// ===== SELECTOR DE VOZ =====
+const vozSelector = document.getElementById('vozSelector');
+let vocesDisponibles = [];
+
+function cargarVoces() {
+  vocesDisponibles = speechSynthesis.getVoices().filter(v => v.lang.startsWith('es'));
+  if (vocesDisponibles.length === 0) vocesDisponibles = speechSynthesis.getVoices();
+
+  vozSelector.innerHTML = '';
+  vocesDisponibles.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = v.name;
+    vozSelector.appendChild(opt);
+  });
+
+  const guardada = localStorage.getItem('jarvisVozNombre');
+  const idxGuardado = vocesDisponibles.findIndex(v => v.name === guardada);
+  if (idxGuardado >= 0) vozSelector.value = idxGuardado;
+}
+speechSynthesis.onvoiceschanged = cargarVoces;
+cargarVoces();
+
+vozSelector.addEventListener('change', () => {
+  const v = vocesDisponibles[vozSelector.value];
+  if (v) localStorage.setItem('jarvisVozNombre', v.name);
+});
+
+// ===== UBICACION =====
+let ubicacionTexto = '';
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      ubicacionTexto = `${pos.coords.latitude}, ${pos.coords.longitude}`;
+    },
+    (err) => {
+      console.log('No se pudo obtener ubicacion:', err.message);
+    }
+  );
+}
+
+// ===== CHAT =====
 const chat = document.getElementById('chat');
 const texto = document.getElementById('texto');
 const btnEnviar = document.getElementById('btnEnviar');
 const btnVoz = document.getElementById('btnVoz');
 
-function agregarMensaje(texto, clase) {
+function agregarMensaje(txt, clase) {
   const div = document.createElement('div');
   div.className = 'msg ' + clase;
-  div.textContent = texto;
+  div.textContent = txt;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
 
-function hablar(texto) {
-  const utter = new SpeechSynthesisUtterance(texto);
+let estaHablando = false;
+
+function hablar(txt) {
+  const utter = new SpeechSynthesisUtterance(txt);
   utter.lang = 'es-ES';
+  utter.pitch = 0.5;
+  utter.rate = 0.92;
+
+  const elegida = vocesDisponibles[vozSelector.value];
+  if (elegida) utter.voice = elegida;
+
+  utter.onstart = () => {
+    estaHablando = true;
+    setEstado('hablando', 'Hablando');
+  };
+  utter.onend = () => {
+    estaHablando = false;
+    setEstado('reposo', 'En reposo');
+  };
+
   speechSynthesis.speak(utter);
+}
+
+function detenerHabla() {
+  estaHablando = false;
+  speechSynthesis.cancel();
+  setTimeout(() => speechSynthesis.cancel(), 50);
+}
+
+function procesarAcciones(texto) {
+  const regex = /\[ACCION:abrir:(.*?)\]/g;
+  let match;
+  let urls = [];
+  while ((match = regex.exec(texto)) !== null) {
+    urls.push(match[1].trim());
+  }
+  const textoLimpio = texto.replace(regex, '').trim();
+  return { textoLimpio, urls };
 }
 
 async function enviarMensaje() {
@@ -116,40 +296,64 @@ async function enviarMensaje() {
     const res = await fetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mensaje })
+      body: JSON.stringify({ mensaje, ubicacion: ubicacionTexto })
     });
     const data = await res.json();
-    ultimoMsg.textContent = data.respuesta;
-    hablar(data.respuesta);
+
+    const { textoLimpio, urls } = procesarAcciones(data.respuesta);
+
+    ultimoMsg.textContent = textoLimpio;
+    hablar(textoLimpio);
+
+    urls.forEach(url => {
+      window.open(url, '_blank');
+    });
   } catch (err) {
     ultimoMsg.textContent = 'Error al conectar con Jarvis.';
+    setEstado('reposo', 'En reposo');
   }
 }
 
 btnEnviar.addEventListener('click', enviarMensaje);
-texto.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') enviarMensaje();
-});
+texto.addEventListener('keypress', (e) => { if (e.key === 'Enter') enviarMensaje(); });
 
-// Reconocimiento de voz
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SpeechRecognition) {
   const recognition = new SpeechRecognition();
   recognition.lang = 'es-ES';
   recognition.interimResults = false;
+  let escuchandoActivo = false;
 
   btnVoz.addEventListener('click', () => {
-    recognition.start();
-    btnVoz.textContent = '🔴';
+    if (escuchandoActivo) {
+      recognition.stop();
+      return;
+    }
+
+    if (estaHablando) {
+      detenerHabla();
+      setTimeout(() => recognition.start(), 250);
+    } else {
+      recognition.start();
+    }
   });
 
+  recognition.onstart = () => {
+    escuchandoActivo = true;
+    btnVoz.textContent = '🔴';
+    setEstado('escuchando', 'Escuchando');
+  };
+
   recognition.onresult = (event) => {
-    const dicho = event.results[0][0].transcript;
-    texto.value = dicho;
+    texto.value = event.results[0][0].transcript;
     enviarMensaje();
   };
 
-  recognition.onend = () => { btnVoz.textContent = '🎤'; };
+  recognition.onend = () => {
+    escuchandoActivo = false;
+    btnVoz.textContent = '🎤';
+    if (estadoActual === 'escuchando') setEstado('reposo', 'En reposo');
+  };
 } else {
   btnVoz.style.display = 'none';
 }
