@@ -216,13 +216,19 @@ def chat():
             modelo_usar = MODELO_TEXTO
             mensajes.append({'role': 'user', 'content': mensaje_usuario})
 
+        payload = {'model': modelo_usar, 'messages': mensajes, 'max_completion_tokens': 1024}
+        if modelo_usar == MODELO_TEXTO:
+            payload['reasoning_effort'] = 'low'
+
         resp = requests.post(
             GROQ_URL,
             headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},
-            json={'model': modelo_usar, 'messages': mensajes}
+            json=payload
         )
         resp.raise_for_status()
-        respuesta = resp.json()['choices'][0]['message']['content']
+        respuesta = resp.json()['choices'][0]['message'].get('content') or ''
+        if not respuesta.strip():
+            respuesta = 'Disculpe, señor. Podría repetir eso, por favor.'
 
         match_busqueda = re.search(r'\[BUSCAR:(.*?)\]', respuesta)
         if match_busqueda:
