@@ -74,27 +74,98 @@
     font-size: clamp(13px, 2.2vw, 15px);
     line-height: 1.4;
   }
+  .msg img {
+    max-width: 100%;
+    border-radius: 6px;
+    margin-top: 6px;
+    display: block;
+  }
   .user { background: #1a2332; margin-left: auto; text-align: right; color: #ffffff; }
   .jarvis { background: #00e5ff11; border: 1px solid #00e5ff33; color: #00e5ff; }
+  #previewArea {
+    display: none;
+    padding: 8px clamp(10px, 3vw, 20px) 0;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+  }
+  #previewArea img {
+    height: 56px;
+    border-radius: 6px;
+    border: 1px solid #00e5ff44;
+  }
+  #btnQuitarImagen {
+    background: #331a1a;
+    color: #ff8080;
+    border: 1px solid #ff808044;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+  }
+
+  /* ===== BARRA INFERIOR ESTILO PASTILLA ===== */
   #inputArea {
     display: flex;
-    padding: clamp(8px, 2vw, 14px);
-    border-top: 1px solid #00e5ff33;
-    gap: 8px;
+    align-items: center;
+    margin: clamp(8px, 2vw, 14px);
+    margin-bottom: max(clamp(8px, 2vw, 14px), env(safe-area-inset-bottom));
+    padding: 6px;
+    gap: 4px;
     flex-shrink: 0;
-    padding-bottom: max(clamp(8px, 2vw, 14px), env(safe-area-inset-bottom));
+    background: #10151f;
+    border: 1px solid #00e5ff33;
+    border-radius: 32px;
   }
   #texto {
-    flex: 1; min-width: 0;
-    background: #1a2332; border: 1px solid #00e5ff44; color: white;
-    padding: 10px; border-radius: 6px; font-size: 16px;
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    color: white;
+    padding: 10px 8px;
+    font-size: 16px;
+    outline: none;
   }
-  button {
-    background: #00e5ff; color: #05070d; border: none;
-    padding: 10px 16px; border-radius: 6px; font-weight: bold;
-    font-size: 16px; flex-shrink: 0;
+  #texto::placeholder { color: #00e5ff77; }
+
+  .iconBtn {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #1a2332;
+    color: #00e5ff;
+    border: 1px solid #00e5ff33;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
   }
-  button:active { opacity: 0.7; }
+  .iconBtn:active { opacity: 0.7; }
+  .iconBtn.activo {
+    background: #3a1414;
+    border-color: #ff5050;
+    color: #ff5050;
+  }
+
+  #btnEnviar {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #00e5ff;
+    color: #05070d;
+    border: none;
+    font-size: 20px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  #btnEnviar:active { opacity: 0.7; }
+
   @media (min-width: 900px) {
     #orbCanvas { width: min(35vw, 50vh); height: min(35vw, 50vh); }
     #chat { max-height: 28vh; }
@@ -116,9 +187,28 @@
 
 <div id="chat"></div>
 
+<div id="previewArea">
+  <img id="previewImg" src="" alt="preview">
+  <button id="btnQuitarImagen">✕ Quitar</button>
+</div>
+
 <div id="inputArea">
-  <button id="btnVoz">🎤</button>
+  <button id="btnAdjuntar" class="iconBtn">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+      <circle cx="12" cy="13" r="4"></circle>
+    </svg>
+  </button>
+  <input type="file" id="inputArchivo" accept="image/*" style="display:none">
   <input type="text" id="texto" placeholder="Habla con Jarvis...">
+  <button id="btnVoz" class="iconBtn">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+      <line x1="12" y1="19" x2="12" y2="23"></line>
+      <line x1="8" y1="23" x2="16" y2="23"></line>
+    </svg>
+  </button>
   <button id="btnEnviar">➤</button>
 </div>
 
@@ -252,13 +342,51 @@ const chat = document.getElementById('chat');
 const texto = document.getElementById('texto');
 const btnEnviar = document.getElementById('btnEnviar');
 const btnVoz = document.getElementById('btnVoz');
+const btnAdjuntar = document.getElementById('btnAdjuntar');
+const inputArchivo = document.getElementById('inputArchivo');
+const previewArea = document.getElementById('previewArea');
+const previewImg = document.getElementById('previewImg');
+const btnQuitarImagen = document.getElementById('btnQuitarImagen');
 
-function agregarMensaje(txt, clase) {
+let imagenSeleccionada = null;
+
+btnAdjuntar.addEventListener('click', () => inputArchivo.click());
+
+inputArchivo.addEventListener('change', () => {
+  const archivo = inputArchivo.files[0];
+  if (!archivo) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    imagenSeleccionada = reader.result;
+    previewImg.src = imagenSeleccionada;
+    previewArea.style.display = 'flex';
+  };
+  reader.readAsDataURL(archivo);
+});
+
+btnQuitarImagen.addEventListener('click', () => {
+  imagenSeleccionada = null;
+  inputArchivo.value = '';
+  previewArea.style.display = 'none';
+});
+
+function agregarMensaje(txt, clase, imagenSrc) {
   const div = document.createElement('div');
   div.className = 'msg ' + clase;
-  div.textContent = txt;
+  if (txt) {
+    const p = document.createElement('div');
+    p.textContent = txt;
+    div.appendChild(p);
+  }
+  if (imagenSrc) {
+    const img = document.createElement('img');
+    img.src = imagenSrc;
+    div.appendChild(img);
+  }
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+  return div;
 }
 
 let estaHablando = false;
@@ -303,18 +431,27 @@ function procesarAcciones(texto) {
 
 async function enviarMensaje() {
   const mensaje = texto.value.trim();
-  if (!mensaje) return;
-  agregarMensaje(mensaje, 'user');
-  texto.value = '';
+  const imagenAEnviar = imagenSeleccionada;
 
-  agregarMensaje('...', 'jarvis');
-  const ultimoMsg = chat.lastElementChild;
+  if (!mensaje && !imagenAEnviar) return;
+
+  agregarMensaje(mensaje, 'user', imagenAEnviar);
+  texto.value = '';
+  imagenSeleccionada = null;
+  inputArchivo.value = '';
+  previewArea.style.display = 'none';
+
+  const ultimoMsg = agregarMensaje('...', 'jarvis');
 
   try {
     const res = await fetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mensaje, ubicacion: ubicacionTexto })
+      body: JSON.stringify({
+        mensaje,
+        ubicacion: ubicacionTexto,
+        imagen: imagenAEnviar || ''
+      })
     });
     const data = await res.json();
 
@@ -358,7 +495,7 @@ if (SpeechRecognition) {
 
   recognition.onstart = () => {
     escuchandoActivo = true;
-    btnVoz.textContent = '🔴';
+    btnVoz.classList.add('activo');
     setEstado('escuchando', 'Escuchando');
   };
 
@@ -369,7 +506,7 @@ if (SpeechRecognition) {
 
   recognition.onend = () => {
     escuchandoActivo = false;
-    btnVoz.textContent = '🎤';
+    btnVoz.classList.remove('activo');
     if (estadoActual === 'escuchando') setEstado('reposo', 'En reposo');
   };
 } else {
