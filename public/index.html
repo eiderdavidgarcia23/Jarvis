@@ -46,6 +46,20 @@
     opacity: 0.7;
     text-transform: uppercase;
   }
+  #vozSelectorWrap {
+    position: absolute;
+    top: 2%;
+    right: 3%;
+    font-size: clamp(10px, 2vw, 12px);
+  }
+  #vozSelector {
+    background: #1a2332;
+    color: #00e5ff;
+    border: 1px solid #00e5ff44;
+    border-radius: 6px;
+    padding: 4px;
+    max-width: 38vw;
+  }
   #chat {
     max-height: 22vh;
     overflow-y: auto;
@@ -88,7 +102,6 @@
     border-radius: 20px;
     font-size: 13px;
   }
-
   #inputArea {
     display: flex;
     align-items: center;
@@ -112,7 +125,6 @@
     outline: none;
   }
   #texto::placeholder { color: #00e5ff77; }
-
   .iconBtn {
     width: 44px;
     height: 44px;
@@ -133,7 +145,6 @@
     border-color: #ff5050;
     color: #ff5050;
   }
-
   #btnEnviar {
     width: 44px;
     height: 44px;
@@ -150,7 +161,6 @@
     padding: 0;
   }
   #btnEnviar:active { opacity: 0.7; }
-
   @media (min-width: 900px) {
     #orbCanvas { width: min(35vw, 50vh); height: min(35vw, 50vh); }
     #chat { max-height: 28vh; }
@@ -163,6 +173,9 @@
 <header>J.A.R.V.I.S.</header>
 
 <div id="orbContainer">
+  <div id="vozSelectorWrap">
+    <select id="vozSelector"><option>Cargando voces...</option></select>
+  </div>
   <canvas id="orbCanvas"></canvas>
   <div id="estado">En reposo</div>
 </div>
@@ -194,9 +207,14 @@
   <button id="btnEnviar">➤</button>
 </div>
 
-<audio id="audioPlayer" style="display:none"></audio>
-
 <script>
+// ===== ID DE USUARIO (memoria y recordatorios separados por persona) =====
+let usuarioId = localStorage.getItem('jarvisUsuarioId');
+if (!usuarioId) {
+  usuarioId = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem('jarvisUsuarioId', usuarioId);
+}
+
 // ===== ORBE ANIMADO =====
 const canvas = document.getElementById('orbCanvas');
 const ctx = canvas.getContext('2d');
@@ -262,6 +280,34 @@ function setEstado(nuevo, txt) {
   estadoLabel.textContent = txt;
 }
 
+// ===== SELECTOR DE VOZ =====
+const vozSelector = document.getElementById('vozSelector');
+let vocesDisponibles = [];
+
+function cargarVoces() {
+  vocesDisponibles = speechSynthesis.getVoices().filter(v => v.lang.startsWith('es'));
+  if (vocesDisponibles.length === 0) vocesDisponibles = speechSynthesis.getVoices();
+
+  vozSelector.innerHTML = '';
+  vocesDisponibles.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = v.name;
+    vozSelector.appendChild(opt);
+  });
+
+  const guardada = localStorage.getItem('jarvisVozNombre');
+  const idxGuardado = vocesDisponibles.findIndex(v => v.name === guardada);
+  if (idxGuardado >= 0) vozSelector.value = idxGuardado;
+}
+speechSynthesis.onvoiceschanged = cargarVoces;
+cargarVoces();
+
+vozSelector.addEventListener('change', () => {
+  const v = vocesDisponibles[vozSelector.value];
+  if (v) localStorage.setItem('jarvisVozNombre', v.name);
+});
+
 // ===== UBICACION =====
 let ubicacionTexto = '';
 if (navigator.geolocation) {
@@ -270,7 +316,6 @@ if (navigator.geolocation) {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
       ubicacionTexto = `${lat}, ${lon}`;
-
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
@@ -280,18 +325,37 @@ if (navigator.geolocation) {
         const dir = data.address || {};
         const ciudad = dir.city || dir.town || dir.village || dir.municipality || '';
         const pais = dir.country || '';
-        if (ciudad) {
-          ubicacionTexto = pais ? `${ciudad}, ${pais}` : ciudad;
-        }
+        if (ciudad) ubicacionTexto = pais ? `${ciudad}, ${pais}` : ciudad;
       } catch (err) {
         console.log('No se pudo geocodificar la ubicacion:', err.message);
       }
     },
-    (err) => {
-      console.log('No se pudo obtener ubicacion:', err.message);
-    }
+    (err) => console.log('No se pudo obtener ubicacion:', err.message)
   );
 }
+
+// ===== NOTIFICACIONES / RECORDATORIOS =====
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
+async function revisarRecordatorios() {
+  try {
+    const res = await fetch(`/recordatorios/pendientes?usuario_id=${encodeURIComponent(usuarioId)}`);
+    const data = await res.json();
+    (data.pendientes || []).forEach(texto => {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Jarvis - Recordatorio', { body: texto });
+      } else {
+        agregarMensaje(`🔔 Recordatorio: ${texto}`, 'jarvis');
+      }
+    });
+  } catch (err) {
+    console.log('Error revisando recordatorios:', err.message);
+  }
+}
+setInterval(revisarRecordatorios, 30000);
+revisarRecordatorios();
 
 // ===== CHAT =====
 const chat = document.getElementById('chat');
@@ -303,7 +367,6 @@ const inputArchivo = document.getElementById('inputArchivo');
 const previewArea = document.getElementById('previewArea');
 const previewImg = document.getElementById('previewImg');
 const btnQuitarImagen = document.getElementById('btnQuitarImagen');
-const audioPlayer = document.getElementById('audioPlayer');
 
 let imagenSeleccionada = null;
 
@@ -312,7 +375,6 @@ btnAdjuntar.addEventListener('click', () => inputArchivo.click());
 inputArchivo.addEventListener('change', () => {
   const archivo = inputArchivo.files[0];
   if (!archivo) return;
-
   const reader = new FileReader();
   reader.onload = () => {
     imagenSeleccionada = reader.result;
@@ -346,42 +408,24 @@ function agregarMensaje(txt, clase, imagenSrc) {
   return div;
 }
 
-let estaHablando = false;
-
-audioPlayer.addEventListener('play', () => {
-  estaHablando = true;
-  setEstado('hablando', 'Hablando');
-});
-audioPlayer.addEventListener('ended', () => {
-  estaHablando = false;
-  setEstado('reposo', 'En reposo');
-});
-audioPlayer.addEventListener('pause', () => {
-  estaHablando = false;
-});
-
-async function hablar(txt) {
+function hablar(txt) {
   if (!txt) return;
-  try {
-    const res = await fetch('/voz', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texto: txt })
-    });
-    if (!res.ok) throw new Error('fallo al generar audio');
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    audioPlayer.src = url;
-    audioPlayer.play();
-  } catch (err) {
-    console.log('Error reproduciendo voz:', err.message);
-  }
+  const utter = new SpeechSynthesisUtterance(txt);
+  utter.lang = 'es-ES';
+  utter.pitch = 0.5;
+  utter.rate = 0.92;
+
+  const elegida = vocesDisponibles[vozSelector.value];
+  if (elegida) utter.voice = elegida;
+
+  utter.onstart = () => setEstado('hablando', 'Hablando');
+  utter.onend = () => setEstado('reposo', 'En reposo');
+
+  speechSynthesis.speak(utter);
 }
 
 function detenerHabla() {
-  audioPlayer.pause();
-  audioPlayer.currentTime = 0;
-  estaHablando = false;
+  speechSynthesis.cancel();
   setEstado('reposo', 'En reposo');
 }
 
@@ -415,6 +459,7 @@ async function enviarMensaje() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        usuario_id: usuarioId,
         mensaje,
         ubicacion: ubicacionTexto,
         imagen: imagenAEnviar || ''
@@ -427,9 +472,7 @@ async function enviarMensaje() {
     ultimoMsg.textContent = textoLimpio;
     hablar(textoLimpio);
 
-    urls.forEach(url => {
-      window.open(url, '_blank');
-    });
+    urls.forEach(url => window.open(url, '_blank'));
   } catch (err) {
     ultimoMsg.textContent = 'Error al conectar con Jarvis.';
     setEstado('reposo', 'En reposo');
@@ -451,8 +494,7 @@ if (SpeechRecognition) {
       recognition.stop();
       return;
     }
-
-    if (estaHablando) {
+    if (estadoActual === 'hablando') {
       detenerHabla();
       setTimeout(() => recognition.start(), 250);
     } else {
