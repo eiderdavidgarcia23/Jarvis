@@ -1,3 +1,5 @@
 node_modules/
 .env
 memoria.json
+memorias/
+recordatorios/

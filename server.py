@@ -1,13 +1,9 @@
 import os
 import json
 import re
-import threading
-import subprocess
 import requests
-import time
-import tempfile
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory, Response
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -18,80 +14,58 @@ CORS(app)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-MODELO_TEXTO = 'openai/gpt-oss-120b'  # migrado desde llama-3.3-70b-versatile (retirado 16 ago 2026)
+MODELO_TEXTO = 'openai/gpt-oss-120b'
 MODELO_VISION = 'qwen/qwen3.6-27b'
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), 'memoria.json')
-RECORDATORIOS_FILE = os.path.join(os.path.dirname(__file__), 'recordatorios.json')
 
-PIPER_BIN = os.path.expanduser('~/piper-tts/piper1-gpl/libpiper/install/bin/piper_exe')
-PIPER_LIB = os.path.expanduser('~/piper-tts/piper1-gpl/libpiper/install/lib')
-PIPER_VOICE = os.path.expanduser('~/piper-tts/voces/es_ES-davefx-medium.onnx')
+MEMORIA_DIR = os.path.join(os.path.dirname(__file__), 'memorias')
+RECORDATORIOS_DIR = os.path.join(os.path.dirname(__file__), 'recordatorios')
+os.makedirs(MEMORIA_DIR, exist_ok=True)
+os.makedirs(RECORDATORIOS_DIR, exist_ok=True)
 
-def cargar_memoria():
-    if not os.path.exists(MEMORY_FILE):
+def id_seguro(usuario_id):
+    return re.sub(r'[^a-zA-Z0-9_-]', '', usuario_id or 'anonimo')[:64] or 'anonimo'
+
+def ruta_memoria(usuario_id):
+    return os.path.join(MEMORIA_DIR, f'{id_seguro(usuario_id)}.json')
+
+def ruta_recordatorios(usuario_id):
+    return os.path.join(RECORDATORIOS_DIR, f'{id_seguro(usuario_id)}.json')
+
+def cargar_memoria(usuario_id):
+    ruta = ruta_memoria(usuario_id)
+    if not os.path.exists(ruta):
         return []
-    with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
+    with open(ruta, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def guardar_memoria(historial):
-    with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
+def guardar_memoria(usuario_id, historial):
+    with open(ruta_memoria(usuario_id), 'w', encoding='utf-8') as f:
         json.dump(historial, f, ensure_ascii=False, indent=2)
 
-def cargar_recordatorios():
-    if not os.path.exists(RECORDATORIOS_FILE):
+def cargar_recordatorios(usuario_id):
+    ruta = ruta_recordatorios(usuario_id)
+    if not os.path.exists(ruta):
         return []
-    with open(RECORDATORIOS_FILE, 'r', encoding='utf-8') as f:
+    with open(ruta, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def guardar_recordatorios(lista):
-    with open(RECORDATORIOS_FILE, 'w', encoding='utf-8') as f:
+def guardar_recordatorios(usuario_id, lista):
+    with open(ruta_recordatorios(usuario_id), 'w', encoding='utf-8') as f:
         json.dump(lista, f, ensure_ascii=False, indent=2)
 
-def procesar_recordatorios(texto):
+def procesar_recordatorios(usuario_id, texto):
     patron = r'\[RECORDATORIO:(.*?)\|(.*?)\]'
     matches = re.findall(patron, texto)
     if matches:
-        recordatorios = cargar_recordatorios()
+        recordatorios = cargar_recordatorios(usuario_id)
         for texto_r, fecha_r in matches:
             recordatorios.append({
                 'texto': texto_r.strip(),
                 'fecha_hora': fecha_r.strip(),
                 'enviado': False
             })
-        guardar_recordatorios(recordatorios)
-    texto_limpio = re.sub(patron, '', texto).strip()
-    return texto_limpio
-
-def revisar_recordatorios():
-    while True:
-        try:
-            recordatorios = cargar_recordatorios()
-            ahora = datetime.now()
-            cambios = False
-
-            for r in recordatorios:
-                if r.get('enviado'):
-                    continue
-                try:
-                    fecha_r = datetime.strptime(r['fecha_hora'], '%Y-%m-%d %H:%M')
-                except ValueError:
-                    continue
-
-                if ahora >= fecha_r:
-                    subprocess.run([
-                        'termux-notification',
-                        '--title', 'Jarvis - Recordatorio',
-                        '--content', r['texto']
-                    ])
-                    r['enviado'] = True
-                    cambios = True
-
-            if cambios:
-                guardar_recordatorios(recordatorios)
-        except Exception as e:
-            print('Error en scheduler:', e)
-
-        time.sleep(30)
+        guardar_recordatorios(usuario_id, recordatorios)
+    return re.sub(patron, '', texto).strip()
 
 def buscar_tavily(consulta):
     try:
@@ -116,61 +90,44 @@ def buscar_tavily(consulta):
     except Exception as e:
         return f'Error al buscar: {e}'
 
-def generar_audio(texto):
-    tmp_path = None
-    try:
-        tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-
-        env = dict(os.environ)
-        env['LD_LIBRARY_PATH'] = PIPER_LIB
-
-        subprocess.run(
-            [PIPER_BIN, '-m', PIPER_VOICE, '--output_file', tmp_path],
-            input=texto,
-            text=True,
-            env=env,
-            timeout=30,
-            check=True,
-            capture_output=True
-        )
-
-        with open(tmp_path, 'rb') as f:
-            audio_bytes = f.read()
-        return audio_bytes
-    except Exception as e:
-        print('Error generando audio con Piper:', e)
-        return None
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
 @app.route('/')
 def index():
     return send_from_directory('public', 'index.html')
 
-@app.route('/voz', methods=['POST'])
-def voz():
-    data = request.get_json()
-    texto = data.get('texto', '').strip()
-    if not texto:
-        return jsonify({'error': 'texto vacio'}), 400
+@app.route('/recordatorios/pendientes')
+def recordatorios_pendientes():
+    usuario_id = request.args.get('usuario_id', '')
+    recordatorios = cargar_recordatorios(usuario_id)
+    ahora = datetime.now()
+    pendientes = []
+    cambios = False
 
-    audio_bytes = generar_audio(texto)
-    if audio_bytes is None:
-        return jsonify({'error': 'no se pudo generar audio'}), 500
+    for r in recordatorios:
+        if r.get('enviado'):
+            continue
+        try:
+            fecha_r = datetime.strptime(r['fecha_hora'], '%Y-%m-%d %H:%M')
+        except ValueError:
+            continue
+        if ahora >= fecha_r:
+            pendientes.append(r['texto'])
+            r['enviado'] = True
+            cambios = True
 
-    return Response(audio_bytes, mimetype='audio/wav')
+    if cambios:
+        guardar_recordatorios(usuario_id, recordatorios)
+
+    return jsonify({'pendientes': pendientes})
 
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
         data = request.get_json()
+        usuario_id = data.get('usuario_id', 'anonimo')
         mensaje_usuario = data.get('mensaje', '')
         ubicacion_usuario = data.get('ubicacion', '') or 'desconocida'
         imagen_base64 = data.get('imagen', '')
-        historial = cargar_memoria()
+        historial = cargar_memoria(usuario_id)
 
         ahora = datetime.now()
         fecha_hora_str = ahora.strftime('%A %d de %B de %Y, %H:%M')
@@ -193,8 +150,7 @@ def chat():
             'responde de forma natural confirmando el recordatorio y al FINAL agrega '
             'en una linea aparte exactamente: [RECORDATORIO:texto del recordatorio|'
             'YYYY-MM-DD HH:MM]. Calcula la fecha y hora exacta usando la fecha/hora '
-            'actual que se te dio abajo (ejemplo: si hoy es 2026-08-14 y te piden '
-            '"mañana a las 3pm", usa 2026-08-15 15:00). Nunca menciones esta etiqueta '
+            'actual que se te dio abajo. Nunca menciones esta etiqueta '
             'en tu respuesta hablada. Si el usuario pregunta algo que requiere '
             'informacion actual o en tiempo real que no puedes saber con certeza '
             '(clima, noticias, resultados de deportes, precios, eventos recientes, '
@@ -232,10 +188,7 @@ def chat():
 
         resp = requests.post(
             GROQ_URL,
-            headers={
-                'Authorization': f'Bearer {GROQ_API_KEY}',
-                'Content-Type': 'application/json'
-            },
+            headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},
             json={'model': modelo_usar, 'messages': mensajes}
         )
         resp.raise_for_status()
@@ -258,16 +211,13 @@ def chat():
 
             resp2 = requests.post(
                 GROQ_URL,
-                headers={
-                    'Authorization': f'Bearer {GROQ_API_KEY}',
-                    'Content-Type': 'application/json'
-                },
+                headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},
                 json={'model': MODELO_TEXTO, 'messages': mensajes}
             )
             resp2.raise_for_status()
             respuesta = resp2.json()['choices'][0]['message']['content']
 
-        respuesta = procesar_recordatorios(respuesta)
+        respuesta = procesar_recordatorios(usuario_id, respuesta)
 
         texto_guardar_usuario = mensaje_usuario
         if imagen_base64 and not mensaje_usuario:
@@ -277,7 +227,7 @@ def chat():
 
         historial.append({'role': 'user', 'texto': texto_guardar_usuario})
         historial.append({'role': 'assistant', 'texto': respuesta})
-        guardar_memoria(historial)
+        guardar_memoria(usuario_id, historial)
 
         return jsonify({'respuesta': respuesta})
     except requests.exceptions.HTTPError as e:
@@ -290,8 +240,6 @@ def chat():
         return jsonify({'error': 'Error al conectar con Jarvis'}), 500
 
 if __name__ == '__main__':
-    hilo = threading.Thread(target=revisar_recordatorios, daemon=True)
-    hilo.start()
     port = int(os.environ.get('PORT', 3000))
     print(f'Jarvis corriendo en http://localhost:{port}')
     app.run(host='0.0.0.0', port=port)
