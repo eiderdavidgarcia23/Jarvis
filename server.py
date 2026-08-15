@@ -5,6 +5,7 @@ import requests
 import subprocess
 import tempfile
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -156,10 +157,14 @@ def chat():
         usuario_id = data.get('usuario_id', 'anonimo')
         mensaje_usuario = data.get('mensaje', '')
         ubicacion_usuario = data.get('ubicacion', '') or 'desconocida'
+        zona_horaria = data.get('zona_horaria', '') or 'UTC'
         imagen_base64 = data.get('imagen', '')
         historial = cargar_memoria(usuario_id)
 
-        ahora = datetime.now()
+        try:
+            ahora = datetime.now(ZoneInfo(zona_horaria))
+        except Exception:
+            ahora = datetime.now()
         fecha_hora_str = ahora.strftime('%A %d de %B de %Y, %H:%M')
 
         system_prompt = (

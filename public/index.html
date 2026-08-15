@@ -262,6 +262,7 @@ function setEstado(nuevo, txt) {
 }
 
 let ubicacionTexto = '';
+const zonaHoraria = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 if (navigator.geolocation) {
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
@@ -418,6 +419,7 @@ async function enviarMensaje() {
         usuario_id: usuarioId,
         mensaje,
         ubicacion: ubicacionTexto,
+        zona_horaria: zonaHoraria,
         imagen: imagenAEnviar || ''
       })
     });
