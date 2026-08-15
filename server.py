@@ -2,8 +2,10 @@ import os
 import json
 import re
 import requests
+import subprocess
+import tempfile
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -21,6 +23,11 @@ MEMORIA_DIR = os.path.join(os.path.dirname(__file__), 'memorias')
 RECORDATORIOS_DIR = os.path.join(os.path.dirname(__file__), 'recordatorios')
 os.makedirs(MEMORIA_DIR, exist_ok=True)
 os.makedirs(RECORDATORIOS_DIR, exist_ok=True)
+
+BASE_DIR = os.path.dirname(__file__)
+PIPER_BIN = os.path.join(BASE_DIR, 'piper', 'piper')
+PIPER_LIB = os.path.join(BASE_DIR, 'piper')
+PIPER_VOICE = os.path.join(BASE_DIR, 'piper_voices', 'es_ES-davefx-medium.onnx')
 
 def id_seguro(usuario_id):
     return re.sub(r'[^a-zA-Z0-9_-]', '', usuario_id or 'anonimo')[:64] or 'anonimo'
@@ -59,11 +66,7 @@ def procesar_recordatorios(usuario_id, texto):
     if matches:
         recordatorios = cargar_recordatorios(usuario_id)
         for texto_r, fecha_r in matches:
-            recordatorios.append({
-                'texto': texto_r.strip(),
-                'fecha_hora': fecha_r.strip(),
-                'enviado': False
-            })
+            recordatorios.append({'texto': texto_r.strip(), 'fecha_hora': fecha_r.strip(), 'enviado': False})
         guardar_recordatorios(usuario_id, recordatorios)
     return re.sub(patron, '', texto).strip()
 
@@ -71,12 +74,7 @@ def buscar_tavily(consulta):
     try:
         resp = requests.post(
             'https://api.tavily.com/search',
-            json={
-                'api_key': TAVILY_API_KEY,
-                'query': consulta,
-                'search_depth': 'basic',
-                'max_results': 4
-            },
+            json={'api_key': TAVILY_API_KEY, 'query': consulta, 'search_depth': 'basic', 'max_results': 4},
             timeout=15
         )
         resp.raise_for_status()
@@ -90,9 +88,44 @@ def buscar_tavily(consulta):
     except Exception as e:
         return f'Error al buscar: {e}'
 
+def generar_audio(texto):
+    tmp_path = None
+    try:
+        tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
+        env = dict(os.environ)
+        env['LD_LIBRARY_PATH'] = PIPER_LIB
+
+        subprocess.run(
+            [PIPER_BIN, '-m', PIPER_VOICE, '--output_file', tmp_path],
+            input=texto, text=True, env=env, timeout=30, check=True, capture_output=True
+        )
+
+        with open(tmp_path, 'rb') as f:
+            return f.read()
+    except Exception as e:
+        print('Error generando audio con Piper:', e)
+        return None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
 @app.route('/')
 def index():
     return send_from_directory('public', 'index.html')
+
+@app.route('/voz', methods=['POST'])
+def voz():
+    data = request.get_json()
+    texto = data.get('texto', '').strip()
+    if not texto:
+        return jsonify({'error': 'texto vacio'}), 400
+    audio_bytes = generar_audio(texto)
+    if audio_bytes is None:
+        return jsonify({'error': 'no se pudo generar audio'}), 500
+    return Response(audio_bytes, mimetype='audio/wav')
 
 @app.route('/recordatorios/pendientes')
 def recordatorios_pendientes():
@@ -101,7 +134,6 @@ def recordatorios_pendientes():
     ahora = datetime.now()
     pendientes = []
     cambios = False
-
     for r in recordatorios:
         if r.get('enviado'):
             continue
@@ -113,10 +145,8 @@ def recordatorios_pendientes():
             pendientes.append(r['texto'])
             r['enviado'] = True
             cambios = True
-
     if cambios:
         guardar_recordatorios(usuario_id, recordatorios)
-
     return jsonify({'pendientes': pendientes})
 
 @app.route('/chat', methods=['POST'])
@@ -198,7 +228,6 @@ def chat():
         if match_busqueda:
             consulta = match_busqueda.group(1).strip()
             resultados = buscar_tavily(consulta)
-
             mensajes.append({'role': 'assistant', 'content': respuesta})
             mensajes.append({
                 'role': 'user',
@@ -208,7 +237,6 @@ def chat():
                     'y concisa, en tu personaje de Jarvis.'
                 )
             })
-
             resp2 = requests.post(
                 GROQ_URL,
                 headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},

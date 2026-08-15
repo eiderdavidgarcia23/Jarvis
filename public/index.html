@@ -173,9 +173,6 @@
 <header>J.A.R.V.I.S.</header>
 
 <div id="orbContainer">
-  <div id="vozSelectorWrap">
-    <select id="vozSelector"><option>Cargando voces...</option></select>
-  </div>
   <canvas id="orbCanvas"></canvas>
   <div id="estado">En reposo</div>
 </div>
@@ -280,33 +277,7 @@ function setEstado(nuevo, txt) {
   estadoLabel.textContent = txt;
 }
 
-// ===== SELECTOR DE VOZ =====
-const vozSelector = document.getElementById('vozSelector');
-let vocesDisponibles = [];
 
-function cargarVoces() {
-  vocesDisponibles = speechSynthesis.getVoices().filter(v => v.lang.startsWith('es'));
-  if (vocesDisponibles.length === 0) vocesDisponibles = speechSynthesis.getVoices();
-
-  vozSelector.innerHTML = '';
-  vocesDisponibles.forEach((v, i) => {
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = v.name;
-    vozSelector.appendChild(opt);
-  });
-
-  const guardada = localStorage.getItem('jarvisVozNombre');
-  const idxGuardado = vocesDisponibles.findIndex(v => v.name === guardada);
-  if (idxGuardado >= 0) vozSelector.value = idxGuardado;
-}
-speechSynthesis.onvoiceschanged = cargarVoces;
-cargarVoces();
-
-vozSelector.addEventListener('change', () => {
-  const v = vocesDisponibles[vozSelector.value];
-  if (v) localStorage.setItem('jarvisVozNombre', v.name);
-});
 
 // ===== UBICACION =====
 let ubicacionTexto = '';
