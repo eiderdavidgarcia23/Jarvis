@@ -5,8 +5,9 @@ import threading
 import subprocess
 import requests
 import time
+import tempfile
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -17,10 +18,14 @@ CORS(app)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-MODELO_TEXTO = 'llama-3.3-70b-versatile'  # OJO: se retira 16 ago 2026
+MODELO_TEXTO = 'openai/gpt-oss-120b'  # migrado desde llama-3.3-70b-versatile (retirado 16 ago 2026)
 MODELO_VISION = 'qwen/qwen3.6-27b'
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), 'memoria.json')
 RECORDATORIOS_FILE = os.path.join(os.path.dirname(__file__), 'recordatorios.json')
+
+PIPER_BIN = os.path.expanduser('~/piper-tts/piper1-gpl/libpiper/install/bin/piper_exe')
+PIPER_LIB = os.path.expanduser('~/piper-tts/piper1-gpl/libpiper/install/lib')
+PIPER_VOICE = os.path.expanduser('~/piper-tts/voces/es_ES-davefx-medium.onnx')
 
 def cargar_memoria():
     if not os.path.exists(MEMORY_FILE):
@@ -111,9 +116,52 @@ def buscar_tavily(consulta):
     except Exception as e:
         return f'Error al buscar: {e}'
 
+def generar_audio(texto):
+    tmp_path = None
+    try:
+        tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
+        env = dict(os.environ)
+        env['LD_LIBRARY_PATH'] = PIPER_LIB
+
+        subprocess.run(
+            [PIPER_BIN, '-m', PIPER_VOICE, '--output_file', tmp_path],
+            input=texto,
+            text=True,
+            env=env,
+            timeout=30,
+            check=True,
+            capture_output=True
+        )
+
+        with open(tmp_path, 'rb') as f:
+            audio_bytes = f.read()
+        return audio_bytes
+    except Exception as e:
+        print('Error generando audio con Piper:', e)
+        return None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
 @app.route('/')
 def index():
     return send_from_directory('public', 'index.html')
+
+@app.route('/voz', methods=['POST'])
+def voz():
+    data = request.get_json()
+    texto = data.get('texto', '').strip()
+    if not texto:
+        return jsonify({'error': 'texto vacio'}), 400
+
+    audio_bytes = generar_audio(texto)
+    if audio_bytes is None:
+        return jsonify({'error': 'no se pudo generar audio'}), 500
+
+    return Response(audio_bytes, mimetype='audio/wav')
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -232,6 +280,11 @@ def chat():
         guardar_memoria(historial)
 
         return jsonify({'respuesta': respuesta})
+    except requests.exceptions.HTTPError as e:
+        print(e)
+        if e.response is not None and e.response.status_code == 429:
+            return jsonify({'respuesta': 'Un momento, señor. Mis circuitos necesitan un instante para enfriarse antes de continuar.'})
+        return jsonify({'error': 'Error al conectar con Jarvis'}), 500
     except Exception as e:
         print(e)
         return jsonify({'error': 'Error al conectar con Jarvis'}), 500

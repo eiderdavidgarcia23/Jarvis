@@ -46,20 +46,6 @@
     opacity: 0.7;
     text-transform: uppercase;
   }
-  #vozSelectorWrap {
-    position: absolute;
-    top: 2%;
-    right: 3%;
-    font-size: clamp(10px, 2vw, 12px);
-  }
-  #vozSelector {
-    background: #1a2332;
-    color: #00e5ff;
-    border: 1px solid #00e5ff44;
-    border-radius: 6px;
-    padding: 4px;
-    max-width: 38vw;
-  }
   #chat {
     max-height: 22vh;
     overflow-y: auto;
@@ -103,7 +89,6 @@
     font-size: 13px;
   }
 
-  /* ===== BARRA INFERIOR ESTILO PASTILLA ===== */
   #inputArea {
     display: flex;
     align-items: center;
@@ -178,9 +163,6 @@
 <header>J.A.R.V.I.S.</header>
 
 <div id="orbContainer">
-  <div id="vozSelectorWrap">
-    <select id="vozSelector"><option>Cargando voces...</option></select>
-  </div>
   <canvas id="orbCanvas"></canvas>
   <div id="estado">En reposo</div>
 </div>
@@ -211,6 +193,8 @@
   </button>
   <button id="btnEnviar">➤</button>
 </div>
+
+<audio id="audioPlayer" style="display:none"></audio>
 
 <script>
 // ===== ORBE ANIMADO =====
@@ -278,34 +262,6 @@ function setEstado(nuevo, txt) {
   estadoLabel.textContent = txt;
 }
 
-// ===== SELECTOR DE VOZ =====
-const vozSelector = document.getElementById('vozSelector');
-let vocesDisponibles = [];
-
-function cargarVoces() {
-  vocesDisponibles = speechSynthesis.getVoices().filter(v => v.lang.startsWith('es'));
-  if (vocesDisponibles.length === 0) vocesDisponibles = speechSynthesis.getVoices();
-
-  vozSelector.innerHTML = '';
-  vocesDisponibles.forEach((v, i) => {
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = v.name;
-    vozSelector.appendChild(opt);
-  });
-
-  const guardada = localStorage.getItem('jarvisVozNombre');
-  const idxGuardado = vocesDisponibles.findIndex(v => v.name === guardada);
-  if (idxGuardado >= 0) vozSelector.value = idxGuardado;
-}
-speechSynthesis.onvoiceschanged = cargarVoces;
-cargarVoces();
-
-vozSelector.addEventListener('change', () => {
-  const v = vocesDisponibles[vozSelector.value];
-  if (v) localStorage.setItem('jarvisVozNombre', v.name);
-});
-
 // ===== UBICACION =====
 let ubicacionTexto = '';
 if (navigator.geolocation) {
@@ -347,6 +303,7 @@ const inputArchivo = document.getElementById('inputArchivo');
 const previewArea = document.getElementById('previewArea');
 const previewImg = document.getElementById('previewImg');
 const btnQuitarImagen = document.getElementById('btnQuitarImagen');
+const audioPlayer = document.getElementById('audioPlayer');
 
 let imagenSeleccionada = null;
 
@@ -391,31 +348,41 @@ function agregarMensaje(txt, clase, imagenSrc) {
 
 let estaHablando = false;
 
-function hablar(txt) {
-  const utter = new SpeechSynthesisUtterance(txt);
-  utter.lang = 'es-ES';
-  utter.pitch = 0.5;
-  utter.rate = 0.92;
+audioPlayer.addEventListener('play', () => {
+  estaHablando = true;
+  setEstado('hablando', 'Hablando');
+});
+audioPlayer.addEventListener('ended', () => {
+  estaHablando = false;
+  setEstado('reposo', 'En reposo');
+});
+audioPlayer.addEventListener('pause', () => {
+  estaHablando = false;
+});
 
-  const elegida = vocesDisponibles[vozSelector.value];
-  if (elegida) utter.voice = elegida;
-
-  utter.onstart = () => {
-    estaHablando = true;
-    setEstado('hablando', 'Hablando');
-  };
-  utter.onend = () => {
-    estaHablando = false;
-    setEstado('reposo', 'En reposo');
-  };
-
-  speechSynthesis.speak(utter);
+async function hablar(txt) {
+  if (!txt) return;
+  try {
+    const res = await fetch('/voz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto: txt })
+    });
+    if (!res.ok) throw new Error('fallo al generar audio');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    audioPlayer.src = url;
+    audioPlayer.play();
+  } catch (err) {
+    console.log('Error reproduciendo voz:', err.message);
+  }
 }
 
 function detenerHabla() {
+  audioPlayer.pause();
+  audioPlayer.currentTime = 0;
   estaHablando = false;
-  speechSynthesis.cancel();
-  setTimeout(() => speechSynthesis.cancel(), 50);
+  setEstado('reposo', 'En reposo');
 }
 
 function procesarAcciones(texto) {
