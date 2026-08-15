@@ -46,20 +46,6 @@
     opacity: 0.7;
     text-transform: uppercase;
   }
-  #vozSelectorWrap {
-    position: absolute;
-    top: 2%;
-    right: 3%;
-    font-size: clamp(10px, 2vw, 12px);
-  }
-  #vozSelector {
-    background: #1a2332;
-    color: #00e5ff;
-    border: 1px solid #00e5ff44;
-    border-radius: 6px;
-    padding: 4px;
-    max-width: 38vw;
-  }
   #chat {
     max-height: 22vh;
     overflow-y: auto;
@@ -205,14 +191,12 @@
 </div>
 
 <script>
-// ===== ID DE USUARIO (memoria y recordatorios separados por persona) =====
 let usuarioId = localStorage.getItem('jarvisUsuarioId');
 if (!usuarioId) {
   usuarioId = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
   localStorage.setItem('jarvisUsuarioId', usuarioId);
 }
 
-// ===== ORBE ANIMADO =====
 const canvas = document.getElementById('orbCanvas');
 const ctx = canvas.getContext('2d');
 let estadoActual = 'reposo';
@@ -277,9 +261,6 @@ function setEstado(nuevo, txt) {
   estadoLabel.textContent = txt;
 }
 
-
-
-// ===== UBICACION =====
 let ubicacionTexto = '';
 if (navigator.geolocation) {
   navigator.geolocation.getCurrentPosition(
@@ -305,7 +286,6 @@ if (navigator.geolocation) {
   );
 }
 
-// ===== NOTIFICACIONES / RECORDATORIOS =====
 if ('Notification' in window && Notification.permission === 'default') {
   Notification.requestPermission();
 }
@@ -328,7 +308,6 @@ async function revisarRecordatorios() {
 setInterval(revisarRecordatorios, 30000);
 revisarRecordatorios();
 
-// ===== CHAT =====
 const chat = document.getElementById('chat');
 const texto = document.getElementById('texto');
 const btnEnviar = document.getElementById('btnEnviar');
@@ -379,24 +358,30 @@ function agregarMensaje(txt, clase, imagenSrc) {
   return div;
 }
 
-function hablar(txt) {
+const audioPlayer = new Audio();
+audioPlayer.addEventListener('play', () => setEstado('hablando', 'Hablando'));
+audioPlayer.addEventListener('ended', () => setEstado('reposo', 'En reposo'));
+
+async function hablar(txt) {
   if (!txt) return;
-  const utter = new SpeechSynthesisUtterance(txt);
-  utter.lang = 'es-ES';
-  utter.pitch = 0.5;
-  utter.rate = 0.92;
-
-  const elegida = vocesDisponibles[vozSelector.value];
-  if (elegida) utter.voice = elegida;
-
-  utter.onstart = () => setEstado('hablando', 'Hablando');
-  utter.onend = () => setEstado('reposo', 'En reposo');
-
-  speechSynthesis.speak(utter);
+  try {
+    const res = await fetch('/voz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto: txt })
+    });
+    if (!res.ok) throw new Error('fallo al generar audio');
+    const blob = await res.blob();
+    audioPlayer.src = URL.createObjectURL(blob);
+    audioPlayer.play();
+  } catch (err) {
+    console.log('Error reproduciendo voz:', err.message);
+  }
 }
 
 function detenerHabla() {
-  speechSynthesis.cancel();
+  audioPlayer.pause();
+  audioPlayer.currentTime = 0;
   setEstado('reposo', 'En reposo');
 }
 
@@ -438,14 +423,14 @@ async function enviarMensaje() {
     });
     const data = await res.json();
 
-    const { textoLimpio, urls } = procesarAcciones(data.respuesta);
+    const { textoLimpio, urls } = procesarAcciones(data.respuesta || '');
 
     ultimoMsg.textContent = textoLimpio;
     hablar(textoLimpio);
 
     urls.forEach(url => window.open(url, '_blank'));
   } catch (err) {
-    ultimoMsg.textContent = 'Error al conectar con Jarvis.';
+    ultimoMsg.textContent = 'Error: ' + err.message;
     setEstado('reposo', 'En reposo');
   }
 }
