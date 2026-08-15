@@ -22,8 +22,12 @@ MODELO_VISION = 'qwen/qwen3.6-27b'
 
 MEMORIA_DIR = os.path.join(os.path.dirname(__file__), 'memorias')
 RECORDATORIOS_DIR = os.path.join(os.path.dirname(__file__), 'recordatorios')
+PREFERENCIAS_DIR = os.path.join(os.path.dirname(__file__), 'preferencias')
 os.makedirs(MEMORIA_DIR, exist_ok=True)
 os.makedirs(RECORDATORIOS_DIR, exist_ok=True)
+os.makedirs(PREFERENCIAS_DIR, exist_ok=True)
+
+MODO_AVANZADO = os.environ.get('MODO_AVANZADO', '') == '1' 
 
 BASE_DIR = os.path.dirname(__file__)
 PIPER_BIN = os.path.join(BASE_DIR, 'piper', 'piper')
@@ -60,6 +64,30 @@ def cargar_recordatorios(usuario_id):
 def guardar_recordatorios(usuario_id, lista):
     with open(ruta_recordatorios(usuario_id), 'w', encoding='utf-8') as f:
         json.dump(lista, f, ensure_ascii=False, indent=2)
+
+def ruta_preferencias(usuario_id):
+    return os.path.join(PREFERENCIAS_DIR, f'{id_seguro(usuario_id)}.json')
+
+def cargar_preferencias(usuario_id):
+    ruta = ruta_preferencias(usuario_id)
+    if not os.path.exists(ruta):
+        return {}
+    with open(ruta, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def guardar_preferencias(usuario_id, prefs):
+    with open(ruta_preferencias(usuario_id), 'w', encoding='utf-8') as f:
+        json.dump(prefs, f, ensure_ascii=False, indent=2)
+
+def procesar_preferencias(usuario_id, texto):
+    patron = r'\[PREFERENCIA:(.*?)\|(.*?)\]'
+    matches = re.findall(patron, texto)
+    if matches:
+        prefs = cargar_preferencias(usuario_id)
+        for campo, valor in matches:
+            prefs[campo.strip()] = valor.strip()
+        guardar_preferencias(usuario_id, prefs)
+    return re.sub(patron, '', texto).strip()
 
 def procesar_recordatorios(usuario_id, texto):
     patron = r'\[RECORDATORIO:(.*?)\|(.*?)\]'
@@ -160,6 +188,7 @@ def chat():
         zona_horaria = data.get('zona_horaria', '') or 'UTC'
         imagen_base64 = data.get('imagen', '')
         historial = cargar_memoria(usuario_id)
+        preferencias = cargar_preferencias(usuario_id)
 
         try:
             ahora = datetime.now(ZoneInfo(zona_horaria))
@@ -203,6 +232,24 @@ def chat():
             'nunca inventes ni calcules una hora distinta. '
             f'La ubicacion actual del usuario es: {ubicacion_usuario}.'
         )
+
+        if preferencias:
+            lista_prefs = ', '.join(f'{k}: {v}' for k, v in preferencias.items())
+            system_prompt += f' Preferencias guardadas de este usuario sobre como debes tratarlo: {lista_prefs}. Aplicalas siempre que tenga sentido.'
+
+        if MODO_AVANZADO:
+            system_prompt += (
+                ' Modo avanzado activo. Puedes usar la etiqueta [ACCION:abrir:URL] '
+                'varias veces en una misma respuesta si el usuario pide combinar '
+                'varias acciones a la vez (por ejemplo abrir dos cosas relacionadas). '
+                'Si el usuario te dice explicitamente como quiere que le hables '
+                '(mas formal, mas informal, mas breve, con mas humor, etc), guarda '
+                'esa preferencia agregando al FINAL de tu respuesta, en una linea '
+                'aparte, exactamente: [PREFERENCIA:campo|valor]. Ejemplo: si te '
+                'dice "hablame de forma mas casual", agregas '
+                '[PREFERENCIA:tono|casual]. Nunca menciones esta etiqueta en tu '
+                'respuesta hablada.'
+            )
 
         mensajes = [{'role': 'system', 'content': system_prompt}]
         for h in historial:
@@ -257,6 +304,8 @@ def chat():
             respuesta = resp2.json()['choices'][0]['message']['content']
 
         respuesta = procesar_recordatorios(usuario_id, respuesta)
+        if MODO_AVANZADO:
+            respuesta = procesar_preferencias(usuario_id, respuesta)
 
         texto_guardar_usuario = mensaje_usuario
         if imagen_base64 and not mensaje_usuario:
