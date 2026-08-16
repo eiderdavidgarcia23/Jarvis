@@ -187,6 +187,12 @@
       <line x1="8" y1="23" x2="16" y2="23"></line>
     </svg>
   </button>
+  <button id="btnModoJarvis" class="iconBtn" title="Modo Jarvis (segundo plano)">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="2"></circle>
+      <path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path>
+    </svg>
+  </button>
   <button id="btnEnviar">➤</button>
 </div>
 
@@ -306,13 +312,14 @@ async function revisarRecordatorios() {
     console.log('Error revisando recordatorios:', err.message);
   }
 }
-setInterval(revisarRecordatorios, 30000);
+setInterval(revisarRecordatorios, 120000);
 revisarRecordatorios();
 
 const chat = document.getElementById('chat');
 const texto = document.getElementById('texto');
 const btnEnviar = document.getElementById('btnEnviar');
 const btnVoz = document.getElementById('btnVoz');
+const btnModoJarvis = document.getElementById('btnModoJarvis');
 const btnAdjuntar = document.getElementById('btnAdjuntar');
 const inputArchivo = document.getElementById('inputArchivo');
 const previewArea = document.getElementById('previewArea');
@@ -359,9 +366,31 @@ function agregarMensaje(txt, clase, imagenSrc) {
   return div;
 }
 
+// --- Estado global del modo Jarvis (segundo plano) ---
+let modoJarvisActivo = false;
+let bloqueadoFondo = false;
+let fondoActivo = false;
+let escuchandoActivo = false;
+let comandoEnviado = false;
+let reiniciosSeguidos = 0;
+const MAX_REINICIOS_SEGUIDOS = 5;
+let recognitionFondo = null;
+
+function intentarReanudarFondo() {
+  if (!modoJarvisActivo || bloqueadoFondo || escuchandoActivo || fondoActivo || !recognitionFondo) return;
+  setTimeout(() => {
+    if (!modoJarvisActivo || bloqueadoFondo || escuchandoActivo || fondoActivo) return;
+    try { recognitionFondo.start(); } catch (e) {}
+  }, 600);
+}
+
 const audioPlayer = new Audio();
 audioPlayer.addEventListener('play', () => setEstado('hablando', 'Hablando'));
-audioPlayer.addEventListener('ended', () => setEstado('reposo', 'En reposo'));
+audioPlayer.addEventListener('ended', () => {
+  setEstado('reposo', 'En reposo');
+  bloqueadoFondo = false;
+  intentarReanudarFondo();
+});
 
 async function hablar(txt) {
   if (!txt) return;
@@ -377,6 +406,9 @@ async function hablar(txt) {
     audioPlayer.play();
   } catch (err) {
     console.log('Error reproduciendo voz:', err.message);
+    setEstado('reposo', 'En reposo');
+    bloqueadoFondo = false;
+    intentarReanudarFondo();
   }
 }
 
@@ -403,6 +435,8 @@ async function enviarMensaje() {
 
   if (!mensaje && !imagenAEnviar) return;
 
+  if (modoJarvisActivo) bloqueadoFondo = true;
+
   agregarMensaje(mensaje, 'user', imagenAEnviar);
   texto.value = '';
   imagenSeleccionada = null;
@@ -428,12 +462,20 @@ async function enviarMensaje() {
     const { textoLimpio, urls } = procesarAcciones(data.respuesta || '');
 
     ultimoMsg.textContent = textoLimpio;
-    hablar(textoLimpio);
+
+    if (textoLimpio) {
+      hablar(textoLimpio);
+    } else {
+      bloqueadoFondo = false;
+      intentarReanudarFondo();
+    }
 
     urls.forEach(url => window.open(url, '_blank'));
   } catch (err) {
     ultimoMsg.textContent = 'Error: ' + err.message;
     setEstado('reposo', 'En reposo');
+    bloqueadoFondo = false;
+    intentarReanudarFondo();
   }
 }
 
@@ -441,17 +483,19 @@ btnEnviar.addEventListener('click', enviarMensaje);
 texto.addEventListener('keypress', (e) => { if (e.key === 'Enter') enviarMensaje(); });
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
 if (SpeechRecognition) {
   const recognition = new SpeechRecognition();
   recognition.lang = 'es-ES';
   recognition.interimResults = false;
-  let escuchandoActivo = false;
 
   btnVoz.addEventListener('click', () => {
     if (escuchandoActivo) {
       recognition.stop();
       return;
     }
+    bloqueadoFondo = true;
+    if (recognitionFondo) { try { recognitionFondo.stop(); } catch (e) {} }
     if (estadoActual === 'hablando') {
       detenerHabla();
       setTimeout(() => recognition.start(), 250);
@@ -462,11 +506,13 @@ if (SpeechRecognition) {
 
   recognition.onstart = () => {
     escuchandoActivo = true;
+    comandoEnviado = false;
     btnVoz.classList.add('activo');
     setEstado('escuchando', 'Escuchando');
   };
 
   recognition.onresult = (event) => {
+    comandoEnviado = true;
     texto.value = event.results[0][0].transcript;
     enviarMensaje();
   };
@@ -475,9 +521,74 @@ if (SpeechRecognition) {
     escuchandoActivo = false;
     btnVoz.classList.remove('activo');
     if (estadoActual === 'escuchando') setEstado('reposo', 'En reposo');
+    if (!comandoEnviado) {
+      bloqueadoFondo = false;
+      intentarReanudarFondo();
+    }
   };
+
+  recognitionFondo = new SpeechRecognition();
+  recognitionFondo.lang = 'es-ES';
+  recognitionFondo.continuous = true;
+  recognitionFondo.interimResults = false;
+
+  recognitionFondo.onstart = () => {
+    fondoActivo = true;
+  };
+
+  recognitionFondo.onresult = (event) => {
+    reiniciosSeguidos = 0;
+    const ultimo = event.results[event.results.length - 1];
+    const transcript = (ultimo[0].transcript || '').trim();
+    const match = transcript.toLowerCase().match(/jarvis[,]?\s*(.*)/i);
+    if (!match) return;
+    const comando = match[1].trim();
+    try { recognitionFondo.stop(); } catch (e) {}
+    if (comando) {
+      bloqueadoFondo = true;
+      texto.value = comando;
+      enviarMensaje();
+    } else {
+      bloqueadoFondo = true;
+      agregarMensaje('👂 Diga su instrucción...', 'jarvis');
+      setTimeout(() => { try { recognition.start(); } catch (e) {} }, 300);
+    }
+  };
+
+  recognitionFondo.onerror = (e) => {
+    console.log('Error escucha de fondo:', e.error);
+  };
+
+  recognitionFondo.onend = () => {
+    fondoActivo = false;
+    if (bloqueadoFondo || !modoJarvisActivo || escuchandoActivo) return;
+    reiniciosSeguidos++;
+    if (reiniciosSeguidos > MAX_REINICIOS_SEGUIDOS) {
+      modoJarvisActivo = false;
+      btnModoJarvis.classList.remove('activo');
+      agregarMensaje('🛰️ Modo Jarvis pausado (sin actividad de voz). Tócalo de nuevo cuando quieras reactivarlo.', 'jarvis');
+      reiniciosSeguidos = 0;
+      return;
+    }
+    setTimeout(() => { try { recognitionFondo.start(); } catch (e) {} }, 1500);
+  };
+
+  btnModoJarvis.addEventListener('click', () => {
+    modoJarvisActivo = !modoJarvisActivo;
+    btnModoJarvis.classList.toggle('activo', modoJarvisActivo);
+    if (modoJarvisActivo) {
+      bloqueadoFondo = false;
+      reiniciosSeguidos = 0;
+      agregarMensaje('🛰️ Modo Jarvis activado. Diga "Jarvis" seguido de su instrucción.', 'jarvis');
+      try { recognitionFondo.start(); } catch (e) {}
+    } else {
+      agregarMensaje('🛰️ Modo Jarvis desactivado.', 'jarvis');
+      try { recognitionFondo.stop(); } catch (e) {}
+    }
+  });
 } else {
   btnVoz.style.display = 'none';
+  btnModoJarvis.style.display = 'none';
 }
 </script>
 
