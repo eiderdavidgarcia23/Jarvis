@@ -3,3 +3,8 @@ node_modules/
 memoria.json
 memorias/
 recordatorios/
+preferencias/
+piper/
+piper_voices/
+server.js.backup*
+patch*.py
