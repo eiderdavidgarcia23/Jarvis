@@ -6,6 +6,10 @@ import subprocess
 import tempfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import base64
+import io
+from pypdf import PdfReader
+from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -27,7 +31,7 @@ os.makedirs(MEMORIA_DIR, exist_ok=True)
 os.makedirs(RECORDATORIOS_DIR, exist_ok=True)
 os.makedirs(PREFERENCIAS_DIR, exist_ok=True)
 
-MODO_AVANZADO = os.environ.get('MODO_AVANZADO', '') == '1' 
+MODO_AVANZADO = os.environ.get('MODO_AVANZADO', '') == '1'
 
 BASE_DIR = os.path.dirname(__file__)
 PIPER_BIN = os.path.expanduser(os.environ.get('PIPER_BIN', os.path.join(BASE_DIR, 'piper', 'piper')))
@@ -117,7 +121,51 @@ def buscar_tavily(consulta):
     except Exception as e:
         return f'Error al buscar: {e}'
 
+def limpiar_texto_para_voz(texto):
+    texto = re.sub(r'[*_#`]', '', texto)
+    texto = re.sub(r'^\s*[-•]\s+', '', texto, flags=re.MULTILINE)
+    return texto.strip()
+
+def revisar_actividades_sena():
+    try:
+        base = os.environ.get('PLATAFORMA_URL')
+        alias = os.environ.get('PLATAFORMA_ALIAS')
+        clave = os.environ.get('PLATAFORMA_CLAVE')
+        if not base or not alias or not clave:
+            return 'No hay credenciales configuradas para la plataforma.'
+
+        s = requests.Session()
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        r1 = s.get(f'{base}/Auth/Login', headers=headers, timeout=15)
+        soup = BeautifulSoup(r1.text, 'html.parser')
+        token = soup.find('input', {'name': '__RequestVerificationToken'})['value']
+        s.post(f'{base}/Auth/Login', headers=headers, timeout=15, data={
+            'ReturnUrl': '', 'Alias': alias, 'Clave': clave,
+            'Recordarme': 'true', '__RequestVerificationToken': token
+        })
+
+        r2 = s.get(f'{base}/AprendizSena/Actividades/1', headers=headers, timeout=15)
+        soup2 = BeautifulSoup(r2.text, 'html.parser')
+        tarjetas = soup2.find_all(class_='act-card')
+
+        resultado = []
+        for t in tarjetas:
+            titulo_el = t.find(class_='act-titulo')
+            badge_el = t.find(class_='badge')
+            meta_el = t.find(class_='act-meta')
+            titulo = titulo_el.get_text(strip=True) if titulo_el else '(sin titulo)'
+            estado = badge_el.get_text(strip=True) if badge_el else 'desconocido'
+            fecha = meta_el.get_text(strip=True) if meta_el else ''
+            resultado.append(f'- {titulo} | Estado: {estado} | {fecha}')
+
+        if not resultado:
+            return 'No se encontraron actividades en la plataforma.'
+        return chr(10).join(resultado)
+    except Exception as e:
+        return f'Error al revisar la plataforma: {e}'
+
 def generar_audio(texto):
+    texto = limpiar_texto_para_voz(texto)
     tmp_path = None
     try:
         tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
@@ -129,7 +177,7 @@ def generar_audio(texto):
 
         subprocess.run(
             [PIPER_BIN, '-m', PIPER_VOICE, '--output_file', tmp_path],
-            input=texto, text=True, env=env, timeout=30, check=True, capture_output=True
+            input=texto, text=True, env=env, timeout=60, check=True, capture_output=True
         )
 
         with open(tmp_path, 'rb') as f:
@@ -140,6 +188,25 @@ def generar_audio(texto):
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+def extraer_texto_documento(base64_data, nombre_archivo):
+    match_data = re.match(r'data:.*?;base64,(.+)', base64_data)
+    datos_b64 = match_data.group(1) if match_data else base64_data
+    bytes_archivo = base64.b64decode(datos_b64)
+
+    if nombre_archivo.lower().endswith('.pdf'):
+        lector = PdfReader(io.BytesIO(bytes_archivo))
+        texto = ''
+        for pagina in lector.pages:
+            texto += pagina.extract_text() or ''
+            texto += chr(10)
+    else:
+        texto = bytes_archivo.decode('utf-8', errors='ignore')
+
+    LIMITE = 12000
+    if len(texto) > LIMITE:
+        texto = texto[:LIMITE] + chr(10) + '[...documento truncado por longitud...]'
+    return texto.strip()
 
 @app.route('/')
 def index():
@@ -155,6 +222,31 @@ def voz():
     if audio_bytes is None:
         return jsonify({'error': 'no se pudo generar audio'}), 500
     return Response(audio_bytes, mimetype='audio/wav')
+
+@app.route('/generar_pdf', methods=['POST'])
+def generar_pdf():
+    from fpdf import FPDF
+    data = request.get_json()
+    texto = data.get('texto', '').strip()
+    titulo = data.get('titulo', 'Documento Jarvis').strip()
+    if not texto:
+        return jsonify({'error': 'texto vacio'}), 400
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font('Helvetica', 'B', 16)
+    pdf.multi_cell(0, 10, titulo)
+    pdf.ln(4)
+    pdf.set_font('Helvetica', '', 12)
+    texto_limpio = texto.encode('latin-1', errors='replace').decode('latin-1')
+    pdf.multi_cell(0, 8, texto_limpio)
+
+    salida = bytes(pdf.output())
+    return Response(
+        salida,
+        mimetype='application/pdf',
+        headers={'Content-Disposition': 'attachment; filename="documento.pdf"'}
+    )
 
 @app.route('/recordatorios/pendientes')
 def recordatorios_pendientes():
@@ -187,6 +279,8 @@ def chat():
         ubicacion_usuario = data.get('ubicacion', '') or 'desconocida'
         zona_horaria = data.get('zona_horaria', '') or 'UTC'
         imagen_base64 = data.get('imagen', '')
+        documento_base64 = data.get('documento', '')
+        documento_nombre = data.get('documento_nombre', 'documento')
         historial = cargar_memoria(usuario_id)
         preferencias = cargar_preferencias(usuario_id)
 
@@ -244,6 +338,12 @@ def chat():
             'Usa siempre este dato exacto si te preguntan la hora o la fecha, '
             'nunca inventes ni calcules una hora distinta. '
             f'La ubicacion actual del usuario es: {ubicacion_usuario}.'
+            ' Si el usuario pregunta por sus tareas, actividades pendientes, que le '
+            'falta entregar, o el estado de sus entregas en la plataforma de su '
+            'instructor, NUNCA digas que no tienes acceso. En vez de eso SIEMPRE '
+            'responde incluyendo en tu texto, exactamente, la etiqueta '
+            '[REVISAR_TAREAS], que sera reemplazada automaticamente por la '
+            'informacion real de la plataforma. Esto es obligatorio, no opcional.'
         )
 
         if preferencias:
@@ -301,17 +401,41 @@ def chat():
                 'varias veces en una misma respuesta si el usuario pide combinar '
                 'varias acciones a la vez (por ejemplo abrir dos cosas relacionadas). '
                 'Si el usuario te dice explicitamente como quiere que le hables '
-                '(mas formal, mas informal, mas breve, con mas humor, etc), guarda '
-                'esa preferencia agregando al FINAL de tu respuesta, en una linea '
-                'aparte, exactamente: [PREFERENCIA:campo|valor]. Ejemplo: si te '
-                'dice "hablame de forma mas casual", agregas '
-                '[PREFERENCIA:tono|casual]. Nunca menciones esta etiqueta en tu '
-                'respuesta hablada.'
+                '(mas formal, mas informal, mas breve, con mas humor, sarcastico, '
+                'etc), guarda esa preferencia agregando al FINAL de tu respuesta, en '
+                'una linea aparte, exactamente: [PREFERENCIA:campo|valor]. El campo '
+                'tono puede tener cualquier valor que el usuario pida: formal, muy '
+                'formal, casual, sarcastico, con mas humor, directo y breve, etc. Si '
+                'pide sarcasmo, se permite ser mas filoso e ironico de lo habitual, '
+                'siempre dentro del personaje de Jarvis, nunca ofensivo de verdad. '
+                'Nunca menciones esta etiqueta en tu respuesta hablada.'
             )
 
         mensajes = [{'role': 'system', 'content': system_prompt}]
-        for h in historial:
+        historial_reciente = []
+        caracteres_acumulados = 0
+        LIMITE_CARACTERES = 4000
+        for h in reversed(historial):
+            texto_h = h.get('texto', '') or ''
+            caracteres_acumulados += len(texto_h)
+            if caracteres_acumulados > LIMITE_CARACTERES:
+                break
+            historial_reciente.append(h)
+        historial_reciente.reverse()
+        for h in historial_reciente:
             mensajes.append({'role': h['role'], 'content': h['texto']})
+
+        if documento_base64:
+            try:
+                texto_documento = extraer_texto_documento(documento_base64, documento_nombre)
+                mensaje_usuario = (
+                    '[Documento adjunto: ' + documento_nombre + ']' + chr(10) + chr(10)
+                    + texto_documento + chr(10) + chr(10) + '---' + chr(10) + chr(10)
+                    + (mensaje_usuario or 'Analiza este documento y dime que encuentras relevante, en tu personaje de Jarvis.')
+                )
+            except Exception as e:
+                print('Error leyendo documento:', e)
+                mensaje_usuario = (mensaje_usuario or '') + ' [No se pudo leer el documento adjunto, señor]'
 
         if imagen_base64:
             modelo_usar = MODELO_VISION
@@ -329,6 +453,7 @@ def chat():
         payload = {'model': modelo_usar, 'messages': mensajes, 'max_completion_tokens': 1024, 'temperature': 0.85}
         if modelo_usar == MODELO_TEXTO:
             payload['reasoning_effort'] = 'low'
+            payload['reasoning_format'] = 'hidden'
 
         resp = requests.post(
             GROQ_URL,
@@ -339,6 +464,25 @@ def chat():
         respuesta = resp.json()['choices'][0]['message'].get('content') or ''
         if not respuesta.strip():
             respuesta = 'Parece que mis circuitos se distrajeron un instante, señor. ¿Podría repetirlo?'
+
+        if '[REVISAR_TAREAS]' in respuesta:
+            info_tareas = revisar_actividades_sena()
+            mensajes.append({'role': 'assistant', 'content': respuesta})
+            mensajes.append({
+                'role': 'user',
+                'content': (
+                    'Estado real de las actividades en la plataforma:' + chr(10) + info_tareas + chr(10) + chr(10)
+                    + 'Con base en esto, responde al usuario de forma natural y clara, '
+                    'destacando lo pendiente o urgente, en tu personaje de Jarvis.'
+                )
+            })
+            resp_tareas = requests.post(
+                GROQ_URL,
+                headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},
+                json={'model': MODELO_TEXTO, 'messages': mensajes, 'temperature': 0.85}
+            )
+            resp_tareas.raise_for_status()
+            respuesta = resp_tareas.json()['choices'][0]['message']['content']
 
         match_busqueda = re.search(r'\[BUSCAR:(.*?)\]', respuesta)
         if match_busqueda:
@@ -366,7 +510,7 @@ def chat():
             respuesta = procesar_preferencias(usuario_id, respuesta)
             prefs_actuales = cargar_preferencias(usuario_id)
             if prefs_actuales.get('coma') == 'omitida':
-                respuesta = re.sub(r',\s+([sS]eñor)', r' ', respuesta)
+                respuesta = re.sub(r',\s+([sS]eñor)', r' \1', respuesta)
 
         texto_guardar_usuario = mensaje_usuario
         if imagen_base64 and not mensaje_usuario:

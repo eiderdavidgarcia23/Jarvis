@@ -7,144 +7,60 @@
 <style>
   * { box-sizing: border-box; }
   html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    background: #05070d;
-    color: #00e5ff;
-    font-family: 'Courier New', monospace;
-    overflow: hidden;
+    margin: 0; padding: 0; height: 100%;
+    background: #05070d; color: #00e5ff;
+    font-family: 'Courier New', monospace; overflow: hidden;
   }
   body { display: flex; flex-direction: column; }
   header {
-    text-align: center;
-    padding: clamp(8px, 2vh, 16px);
-    font-size: clamp(16px, 4vw, 24px);
-    letter-spacing: clamp(2px, 1vw, 6px);
-    border-bottom: 1px solid #00e5ff33;
-    flex-shrink: 0;
+    text-align: center; padding: clamp(8px, 2vh, 16px);
+    font-size: clamp(16px, 4vw, 24px); letter-spacing: clamp(2px, 1vw, 6px);
+    border-bottom: 1px solid #00e5ff33; flex-shrink: 0;
   }
-  #orbContainer {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 0;
-    position: relative;
-  }
-  #orbCanvas {
-    width: min(70vw, 60vh);
-    height: min(70vw, 60vh);
-    max-width: 420px;
-    max-height: 420px;
-  }
-  #estado {
-    position: absolute;
-    bottom: 6%;
-    font-size: clamp(11px, 2.5vw, 14px);
-    letter-spacing: 2px;
-    opacity: 0.7;
-    text-transform: uppercase;
-  }
-  #chat {
-    max-height: 22vh;
-    overflow-y: auto;
-    padding: 8px clamp(10px, 3vw, 20px);
-    flex-shrink: 0;
-  }
-  .msg {
-    margin: 6px 0;
-    padding: 8px 12px;
-    border-radius: 8px;
-    max-width: 85%;
-    font-size: clamp(13px, 2.2vw, 15px);
-    line-height: 1.4;
-  }
-  .msg img {
-    max-width: 100%;
-    border-radius: 6px;
-    margin-top: 6px;
-    display: block;
-  }
+  #orbContainer { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; position: relative; }
+  #orbCanvas { width: min(70vw, 60vh); height: min(70vw, 60vh); max-width: 420px; max-height: 420px; }
+  #estado { position: absolute; bottom: 6%; font-size: clamp(11px, 2.5vw, 14px); letter-spacing: 2px; opacity: 0.7; text-transform: uppercase; }
+  #chat { max-height: 22vh; overflow-y: auto; padding: 8px clamp(10px, 3vw, 20px); flex-shrink: 0; }
+  .msg { margin: 6px 0; padding: 8px 12px; border-radius: 8px; max-width: 85%; font-size: clamp(13px, 2.2vw, 15px); line-height: 1.4; }
+  .msg img { max-width: 100%; border-radius: 6px; margin-top: 6px; display: block; }
   .user { background: #1a2332; margin-left: auto; text-align: right; color: #ffffff; }
   .jarvis { background: #00e5ff11; border: 1px solid #00e5ff33; color: #00e5ff; }
+  .btnPdf {
+    margin-top: 8px; background: #10151f; color: #00e5ff; border: 1px solid #00e5ff44;
+    padding: 6px 12px; border-radius: 16px; font-size: 12px; cursor: pointer;
+  }
   #previewArea {
-    display: none;
-    padding: 8px clamp(10px, 3vw, 20px) 0;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 10px;
+    display: none; padding: 8px clamp(10px, 3vw, 20px) 0; flex-shrink: 0;
+    align-items: center; gap: 10px; flex-wrap: wrap;
   }
-  #previewArea img {
-    height: 56px;
-    border-radius: 6px;
-    border: 1px solid #00e5ff44;
+  #previewArea img { height: 56px; border-radius: 6px; border: 1px solid #00e5ff44; }
+  .chipDocumento {
+    background: #1a2332; border: 1px solid #00e5ff44; border-radius: 20px;
+    padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px;
   }
-  #btnQuitarImagen {
-    background: #331a1a;
-    color: #ff8080;
-    border: 1px solid #ff808044;
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 13px;
+  #btnQuitarImagen, #btnQuitarDocumento {
+    background: #331a1a; color: #ff8080; border: 1px solid #ff808044;
+    padding: 4px 10px; border-radius: 20px; font-size: 13px;
   }
   #inputArea {
-    display: flex;
-    align-items: center;
-    margin: clamp(8px, 2vw, 14px);
+    display: flex; align-items: center; margin: clamp(8px, 2vw, 14px);
     margin-bottom: max(clamp(8px, 2vw, 14px), env(safe-area-inset-bottom));
-    padding: 6px;
-    gap: 4px;
-    flex-shrink: 0;
-    background: #10151f;
-    border: 1px solid #00e5ff33;
-    border-radius: 32px;
+    padding: 6px; gap: 4px; flex-shrink: 0;
+    background: #10151f; border: 1px solid #00e5ff33; border-radius: 32px;
   }
-  #texto {
-    flex: 1;
-    min-width: 0;
-    background: transparent;
-    border: none;
-    color: white;
-    padding: 10px 8px;
-    font-size: 16px;
-    outline: none;
-  }
+  #texto { flex: 1; min-width: 0; background: transparent; border: none; color: white; padding: 10px 8px; font-size: 16px; outline: none; }
   #texto::placeholder { color: #00e5ff77; }
   .iconBtn {
-    width: 44px;
-    height: 44px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: #1a2332;
-    color: #00e5ff;
-    border: 1px solid #00e5ff33;
-    font-size: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
+    width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%;
+    background: #1a2332; color: #00e5ff; border: 1px solid #00e5ff33;
+    font-size: 18px; display: flex; align-items: center; justify-content: center; padding: 0;
   }
   .iconBtn:active { opacity: 0.7; }
-  .iconBtn.activo {
-    background: #3a1414;
-    border-color: #ff5050;
-    color: #ff5050;
-  }
+  .iconBtn.activo { background: #3a1414; border-color: #ff5050; color: #ff5050; }
   #btnEnviar {
-    width: 44px;
-    height: 44px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: #00e5ff;
-    color: #05070d;
-    border: none;
-    font-size: 20px;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
+    width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%;
+    background: #00e5ff; color: #05070d; border: none; font-size: 20px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; padding: 0;
   }
   #btnEnviar:active { opacity: 0.7; }
   @media (min-width: 900px) {
@@ -166,18 +82,29 @@
 <div id="chat"></div>
 
 <div id="previewArea">
-  <img id="previewImg" src="" alt="preview">
-  <button id="btnQuitarImagen">✕ Quitar</button>
+  <img id="previewImg" src="" alt="preview" style="display:none">
+  <span id="btnQuitarImagen" style="display:none">✕ Quitar imagen</span>
+  <span id="chipDocumento" class="chipDocumento" style="display:none">
+    📄 <span id="nombreDocumento"></span>
+    <span id="btnQuitarDocumento">✕</span>
+  </span>
 </div>
 
 <div id="inputArea">
-  <button id="btnAdjuntar" class="iconBtn">
+  <button id="btnAdjuntar" class="iconBtn" title="Imagen">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
       <circle cx="12" cy="13" r="4"></circle>
     </svg>
   </button>
   <input type="file" id="inputArchivo" accept="image/*" style="display:none">
+  <button id="btnDocumento" class="iconBtn" title="Documento">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+      <polyline points="14 2 14 8 20 8"></polyline>
+    </svg>
+  </button>
+  <input type="file" id="inputDocumento" accept=".pdf,.txt" style="display:none">
   <input type="text" id="texto" placeholder="Habla con Jarvis...">
   <button id="btnVoz" class="iconBtn">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -185,12 +112,6 @@
       <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
       <line x1="12" y1="19" x2="12" y2="23"></line>
       <line x1="8" y1="23" x2="16" y2="23"></line>
-    </svg>
-  </button>
-  <button id="btnModoJarvis" class="iconBtn" title="Modo Jarvis (segundo plano)">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="2"></circle>
-      <path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path>
     </svg>
   </button>
   <button id="btnEnviar">➤</button>
@@ -229,73 +150,52 @@ function animar() {
   ctx.clearRect(0, 0, w, h);
   const cx = w / 2, cy = h / 2;
   const base = Math.min(w, h) * 0.28;
-
   let velocidad = 0.01, amplitud = 1, color = '0,229,255';
   if (estadoActual === 'escuchando') { velocidad = 0.03; amplitud = 1.25; color = '0,255,180'; }
   if (estadoActual === 'hablando')   { velocidad = 0.05; amplitud = 1.5 + Math.sin(t*0.3)*0.15; color = '0,229,255'; }
   t += velocidad * 10;
-
   const nucleoR = base * 0.35 * amplitud;
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, nucleoR * 1.8);
   grad.addColorStop(0, `rgba(${color},0.9)`);
   grad.addColorStop(1, `rgba(${color},0)`);
   ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, nucleoR * 1.8, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, nucleoR, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(255,255,255,0.9)`;
-  ctx.fill();
-
+  ctx.beginPath(); ctx.arc(cx, cy, nucleoR * 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, nucleoR, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255,255,255,0.9)`; ctx.fill();
   particulas.forEach((p) => {
     p.ang += velocidad * (0.5 + p.r * 0.5);
     const radio = base * amplitud * p.r;
     const x = cx + Math.cos(p.ang) * radio;
     const y = cy + Math.sin(p.ang) * radio * Math.cos(p.alt + t * 0.02);
-    ctx.beginPath();
-    ctx.arc(x, y, Math.max(1, w * 0.004), 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${color},${0.5 + 0.5 * p.r})`;
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, Math.max(1, w * 0.004), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${color},${0.5 + 0.5 * p.r})`; ctx.fill();
   });
 }
 animar();
 
-function setEstado(nuevo, txt) {
-  estadoActual = nuevo;
-  estadoLabel.textContent = txt;
-}
+function setEstado(nuevo, txt) { estadoActual = nuevo; estadoLabel.textContent = txt; }
 
 let ubicacionTexto = '';
 const zonaHoraria = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 if (navigator.geolocation) {
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
+      const lat = pos.coords.latitude, lon = pos.coords.longitude;
       ubicacionTexto = `${lat}, ${lon}`;
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
-          { headers: { 'Accept-Language': 'es' } }
-        );
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, { headers: { 'Accept-Language': 'es' } });
         const data = await res.json();
         const dir = data.address || {};
         const ciudad = dir.city || dir.town || dir.village || dir.municipality || '';
         const pais = dir.country || '';
         if (ciudad) ubicacionTexto = pais ? `${ciudad}, ${pais}` : ciudad;
-      } catch (err) {
-        console.log('No se pudo geocodificar la ubicacion:', err.message);
-      }
+      } catch (err) {}
     },
-    (err) => console.log('No se pudo obtener ubicacion:', err.message)
+    (err) => {}
   );
 }
 
-if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission();
-}
+if ('Notification' in window && Notification.permission === 'default') { Notification.requestPermission(); }
 
 async function revisarRecordatorios() {
   try {
@@ -308,9 +208,7 @@ async function revisarRecordatorios() {
         agregarMensaje(`🔔 Recordatorio: ${texto}`, 'jarvis');
       }
     });
-  } catch (err) {
-    console.log('Error revisando recordatorios:', err.message);
-  }
+  } catch (err) {}
 }
 setInterval(revisarRecordatorios, 120000);
 revisarRecordatorios();
@@ -319,112 +217,107 @@ const chat = document.getElementById('chat');
 const texto = document.getElementById('texto');
 const btnEnviar = document.getElementById('btnEnviar');
 const btnVoz = document.getElementById('btnVoz');
-const btnModoJarvis = document.getElementById('btnModoJarvis');
 const btnAdjuntar = document.getElementById('btnAdjuntar');
 const inputArchivo = document.getElementById('inputArchivo');
+const btnDocumento = document.getElementById('btnDocumento');
+const inputDocumento = document.getElementById('inputDocumento');
 const previewArea = document.getElementById('previewArea');
 const previewImg = document.getElementById('previewImg');
 const btnQuitarImagen = document.getElementById('btnQuitarImagen');
+const chipDocumento = document.getElementById('chipDocumento');
+const nombreDocumento = document.getElementById('nombreDocumento');
+const btnQuitarDocumento = document.getElementById('btnQuitarDocumento');
 
 let imagenSeleccionada = null;
+let documentoSeleccionado = null;
+let documentoNombreActual = '';
+
+function actualizarPreview() {
+  previewArea.style.display = (imagenSeleccionada || documentoSeleccionado) ? 'flex' : 'none';
+  previewImg.style.display = imagenSeleccionada ? 'block' : 'none';
+  btnQuitarImagen.style.display = imagenSeleccionada ? 'inline' : 'none';
+  chipDocumento.style.display = documentoSeleccionado ? 'flex' : 'none';
+}
 
 btnAdjuntar.addEventListener('click', () => inputArchivo.click());
-
 inputArchivo.addEventListener('change', () => {
   const archivo = inputArchivo.files[0];
   if (!archivo) return;
   const reader = new FileReader();
+  reader.onload = () => { imagenSeleccionada = reader.result; previewImg.src = imagenSeleccionada; actualizarPreview(); };
+  reader.readAsDataURL(archivo);
+});
+btnQuitarImagen.addEventListener('click', () => { imagenSeleccionada = null; inputArchivo.value = ''; actualizarPreview(); });
+
+btnDocumento.addEventListener('click', () => inputDocumento.click());
+inputDocumento.addEventListener('change', () => {
+  const archivo = inputDocumento.files[0];
+  if (!archivo) return;
+  const reader = new FileReader();
   reader.onload = () => {
-    imagenSeleccionada = reader.result;
-    previewImg.src = imagenSeleccionada;
-    previewArea.style.display = 'flex';
+    documentoSeleccionado = reader.result;
+    documentoNombreActual = archivo.name;
+    nombreDocumento.textContent = archivo.name;
+    actualizarPreview();
   };
   reader.readAsDataURL(archivo);
 });
-
-btnQuitarImagen.addEventListener('click', () => {
-  imagenSeleccionada = null;
-  inputArchivo.value = '';
-  previewArea.style.display = 'none';
-});
+btnQuitarDocumento.addEventListener('click', () => { documentoSeleccionado = null; documentoNombreActual = ''; inputDocumento.value = ''; actualizarPreview(); });
 
 function agregarMensaje(txt, clase, imagenSrc) {
   const div = document.createElement('div');
   div.className = 'msg ' + clase;
-  if (txt) {
-    const p = document.createElement('div');
-    p.textContent = txt;
-    div.appendChild(p);
-  }
-  if (imagenSrc) {
-    const img = document.createElement('img');
-    img.src = imagenSrc;
-    div.appendChild(img);
+  if (txt) { const p = document.createElement('div'); p.textContent = txt; div.appendChild(p); }
+  if (imagenSrc) { const img = document.createElement('img'); img.src = imagenSrc; div.appendChild(img); }
+  if (clase === 'jarvis' && txt) {
+    const btn = document.createElement('button');
+    btn.className = 'btnPdf';
+    btn.textContent = '📄 Descargar como PDF';
+    btn.addEventListener('click', () => descargarPdf(txt));
+    div.appendChild(btn);
   }
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
   return div;
 }
 
-// --- Estado global del modo Jarvis (segundo plano) ---
-let modoJarvisActivo = false;
-let bloqueadoFondo = false;
-let fondoActivo = false;
-let escuchandoActivo = false;
-let comandoEnviado = false;
-let reiniciosSeguidos = 0;
-const MAX_REINICIOS_SEGUIDOS = 5;
-let recognitionFondo = null;
-
-function intentarReanudarFondo() {
-  if (!modoJarvisActivo || bloqueadoFondo || escuchandoActivo || fondoActivo || !recognitionFondo) return;
-  setTimeout(() => {
-    if (!modoJarvisActivo || bloqueadoFondo || escuchandoActivo || fondoActivo) return;
-    try { recognitionFondo.start(); } catch (e) {}
-  }, 600);
+async function descargarPdf(texto) {
+  try {
+    const res = await fetch('/generar_pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto, titulo: 'Jarvis' })
+    });
+    if (!res.ok) throw new Error('fallo generando pdf');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'documento.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (err) { console.log('Error descargando PDF:', err.message); }
 }
 
 const audioPlayer = new Audio();
 audioPlayer.addEventListener('play', () => setEstado('hablando', 'Hablando'));
-audioPlayer.addEventListener('ended', () => {
-  setEstado('reposo', 'En reposo');
-  bloqueadoFondo = false;
-  intentarReanudarFondo();
-});
+audioPlayer.addEventListener('ended', () => setEstado('reposo', 'En reposo'));
 
 async function hablar(txt) {
   if (!txt) return;
   try {
-    const res = await fetch('/voz', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texto: txt })
-    });
+    const res = await fetch('/voz', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: txt }) });
     if (!res.ok) throw new Error('fallo al generar audio');
     const blob = await res.blob();
     audioPlayer.src = URL.createObjectURL(blob);
     audioPlayer.play();
-  } catch (err) {
-    console.log('Error reproduciendo voz:', err.message);
-    setEstado('reposo', 'En reposo');
-    bloqueadoFondo = false;
-    intentarReanudarFondo();
-  }
+  } catch (err) {}
 }
 
-function detenerHabla() {
-  audioPlayer.pause();
-  audioPlayer.currentTime = 0;
-  setEstado('reposo', 'En reposo');
-}
+function detenerHabla() { audioPlayer.pause(); audioPlayer.currentTime = 0; setEstado('reposo', 'En reposo'); }
 
 function procesarAcciones(texto) {
   const regex = /\[ACCION:abrir:(.*?)\]/g;
-  let match;
-  let urls = [];
-  while ((match = regex.exec(texto)) !== null) {
-    urls.push(match[1].trim());
-  }
+  let match; let urls = [];
+  while ((match = regex.exec(texto)) !== null) { urls.push(match[1].trim()); }
   const textoLimpio = texto.replace(regex, '').trim();
   return { textoLimpio, urls };
 }
@@ -432,16 +325,16 @@ function procesarAcciones(texto) {
 async function enviarMensaje() {
   const mensaje = texto.value.trim();
   const imagenAEnviar = imagenSeleccionada;
+  const documentoAEnviar = documentoSeleccionado;
+  const nombreDocAEnviar = documentoNombreActual;
 
-  if (!mensaje && !imagenAEnviar) return;
+  if (!mensaje && !imagenAEnviar && !documentoAEnviar) return;
 
-  if (modoJarvisActivo) bloqueadoFondo = true;
-
-  agregarMensaje(mensaje, 'user', imagenAEnviar);
+  agregarMensaje(mensaje || (documentoAEnviar ? '[Documento: ' + nombreDocAEnviar + ']' : ''), 'user', imagenAEnviar);
   texto.value = '';
-  imagenSeleccionada = null;
-  inputArchivo.value = '';
-  previewArea.style.display = 'none';
+  imagenSeleccionada = null; inputArchivo.value = '';
+  documentoSeleccionado = null; documentoNombreActual = ''; inputDocumento.value = '';
+  actualizarPreview();
 
   const ultimoMsg = agregarMensaje('...', 'jarvis');
 
@@ -450,32 +343,19 @@ async function enviarMensaje() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        usuario_id: usuarioId,
-        mensaje,
-        ubicacion: ubicacionTexto,
-        zona_horaria: zonaHoraria,
-        imagen: imagenAEnviar || ''
+        usuario_id: usuarioId, mensaje, ubicacion: ubicacionTexto, zona_horaria: zonaHoraria,
+        imagen: imagenAEnviar || '', documento: documentoAEnviar || '', documento_nombre: nombreDocAEnviar
       })
     });
     const data = await res.json();
-
     const { textoLimpio, urls } = procesarAcciones(data.respuesta || '');
-
-    ultimoMsg.textContent = textoLimpio;
-
-    if (textoLimpio) {
-      hablar(textoLimpio);
-    } else {
-      bloqueadoFondo = false;
-      intentarReanudarFondo();
-    }
-
+    ultimoMsg.remove();
+    agregarMensaje(textoLimpio, 'jarvis');
+    hablar(textoLimpio);
     urls.forEach(url => window.open(url, '_blank'));
   } catch (err) {
     ultimoMsg.textContent = 'Error: ' + err.message;
     setEstado('reposo', 'En reposo');
-    bloqueadoFondo = false;
-    intentarReanudarFondo();
   }
 }
 
@@ -483,113 +363,20 @@ btnEnviar.addEventListener('click', enviarMensaje);
 texto.addEventListener('keypress', (e) => { if (e.key === 'Enter') enviarMensaje(); });
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 if (SpeechRecognition) {
   const recognition = new SpeechRecognition();
   recognition.lang = 'es-ES';
   recognition.interimResults = false;
-
+  let escuchandoActivo = false;
   btnVoz.addEventListener('click', () => {
-    if (escuchandoActivo) {
-      recognition.stop();
-      return;
-    }
-    bloqueadoFondo = true;
-    if (recognitionFondo) { try { recognitionFondo.stop(); } catch (e) {} }
-    if (estadoActual === 'hablando') {
-      detenerHabla();
-      setTimeout(() => recognition.start(), 250);
-    } else {
-      recognition.start();
-    }
+    if (escuchandoActivo) { recognition.stop(); return; }
+    if (estadoActual === 'hablando') { detenerHabla(); setTimeout(() => recognition.start(), 250); }
+    else { recognition.start(); }
   });
-
-  recognition.onstart = () => {
-    escuchandoActivo = true;
-    comandoEnviado = false;
-    btnVoz.classList.add('activo');
-    setEstado('escuchando', 'Escuchando');
-  };
-
-  recognition.onresult = (event) => {
-    comandoEnviado = true;
-    texto.value = event.results[0][0].transcript;
-    enviarMensaje();
-  };
-
-  recognition.onend = () => {
-    escuchandoActivo = false;
-    btnVoz.classList.remove('activo');
-    if (estadoActual === 'escuchando') setEstado('reposo', 'En reposo');
-    if (!comandoEnviado) {
-      bloqueadoFondo = false;
-      intentarReanudarFondo();
-    }
-  };
-
-  recognitionFondo = new SpeechRecognition();
-  recognitionFondo.lang = 'es-ES';
-  recognitionFondo.continuous = true;
-  recognitionFondo.interimResults = false;
-
-  recognitionFondo.onstart = () => {
-    fondoActivo = true;
-  };
-
-  recognitionFondo.onresult = (event) => {
-    reiniciosSeguidos = 0;
-    const ultimo = event.results[event.results.length - 1];
-    const transcript = (ultimo[0].transcript || '').trim();
-    const match = transcript.toLowerCase().match(/jarvis[,]?\s*(.*)/i);
-    if (!match) return;
-    const comando = match[1].trim();
-    try { recognitionFondo.stop(); } catch (e) {}
-    if (comando) {
-      bloqueadoFondo = true;
-      texto.value = comando;
-      enviarMensaje();
-    } else {
-      bloqueadoFondo = true;
-      agregarMensaje('👂 Diga su instrucción...', 'jarvis');
-      setTimeout(() => { try { recognition.start(); } catch (e) {} }, 300);
-    }
-  };
-
-  recognitionFondo.onerror = (e) => {
-    console.log('Error escucha de fondo:', e.error);
-  };
-
-  recognitionFondo.onend = () => {
-    fondoActivo = false;
-    if (bloqueadoFondo || !modoJarvisActivo || escuchandoActivo) return;
-    reiniciosSeguidos++;
-    if (reiniciosSeguidos > MAX_REINICIOS_SEGUIDOS) {
-      modoJarvisActivo = false;
-      btnModoJarvis.classList.remove('activo');
-      agregarMensaje('🛰️ Modo Jarvis pausado (sin actividad de voz). Tócalo de nuevo cuando quieras reactivarlo.', 'jarvis');
-      reiniciosSeguidos = 0;
-      return;
-    }
-    setTimeout(() => { try { recognitionFondo.start(); } catch (e) {} }, 1500);
-  };
-
-  btnModoJarvis.addEventListener('click', () => {
-    modoJarvisActivo = !modoJarvisActivo;
-    btnModoJarvis.classList.toggle('activo', modoJarvisActivo);
-    if (modoJarvisActivo) {
-      bloqueadoFondo = false;
-      reiniciosSeguidos = 0;
-      agregarMensaje('🛰️ Modo Jarvis activado. Diga "Jarvis" seguido de su instrucción.', 'jarvis');
-      try { recognitionFondo.start(); } catch (e) {}
-    } else {
-      agregarMensaje('🛰️ Modo Jarvis desactivado.', 'jarvis');
-      try { recognitionFondo.stop(); } catch (e) {}
-    }
-  });
-} else {
-  btnVoz.style.display = 'none';
-  btnModoJarvis.style.display = 'none';
-}
+  recognition.onstart = () => { escuchandoActivo = true; btnVoz.classList.add('activo'); setEstado('escuchando', 'Escuchando'); };
+  recognition.onresult = (event) => { texto.value = event.results[0][0].transcript; enviarMensaje(); };
+  recognition.onend = () => { escuchandoActivo = false; btnVoz.classList.remove('activo'); if (estadoActual === 'escuchando') setEstado('reposo', 'En reposo'); };
+} else { btnVoz.style.display = 'none'; }
 </script>
 
 </body>
