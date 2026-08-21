@@ -4,19 +4,23 @@ import re
 import requests
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import base64
 import io
 from pypdf import PdfReader
 from bs4 import BeautifulSoup
-from flask import Flask, request, jsonify, send_from_directory, Response
+from flask import Flask, request, jsonify, send_from_directory, Response, session, redirect
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__, static_folder='public', static_url_path='')
 CORS(app)
+
+app.secret_key = os.environ.get('SECRET_KEY', 'clave-temporal-cambiar-en-env')
+app.permanent_session_lifetime = timedelta(days=30)
+JARVIS_PASSWORD = os.environ.get('JARVIS_PASSWORD', '')
 
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
@@ -208,6 +212,49 @@ def extraer_texto_documento(base64_data, nombre_archivo):
         texto = texto[:LIMITE] + chr(10) + '[...documento truncado por longitud...]'
     return texto.strip()
 
+@app.before_request
+def requerir_login():
+    if request.path == '/login' or request.path.startswith('/static'):
+        return
+    if not session.get('autenticado'):
+        if request.path == '/':
+            return redirect('/login')
+        return jsonify({'error': 'no autenticado'}), 401
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = ''
+    if request.method == 'POST':
+        clave = request.form.get('clave', '')
+        if JARVIS_PASSWORD and clave == JARVIS_PASSWORD:
+            session.permanent = True
+            session['autenticado'] = True
+            return redirect('/')
+        error = 'Clave incorrecta, señor.'
+
+    return f'''<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S. - Acceso</title>
+<style>
+  body {{ margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
+    background:#05070d; font-family:'Courier New', monospace; }}
+  form {{ background:#10151f; border:1px solid #00e5ff33; border-radius:16px; padding:32px;
+    width:min(90vw, 320px); text-align:center; }}
+  h1 {{ color:#00e5ff; letter-spacing:4px; font-size:20px; margin-bottom:24px; }}
+  input {{ width:100%; padding:12px; margin-bottom:12px; border-radius:8px; border:1px solid #00e5ff44;
+    background:#1a2332; color:white; font-size:16px; box-sizing:border-box; }}
+  button {{ width:100%; padding:12px; border-radius:8px; border:none; background:#00e5ff;
+    color:#05070d; font-weight:bold; font-size:16px; }}
+  p {{ color:#ff5050; font-size:13px; }}
+</style></head><body>
+<form method="POST">
+  <h1>J.A.R.V.I.S.</h1>
+  <input type="password" name="clave" placeholder="Clave de acceso" autofocus>
+  <button type="submit">Entrar</button>
+  {f'<p>{error}</p>' if error else ''}
+</form></body></html>'''
+
 @app.route('/')
 def index():
     return send_from_directory('public', 'index.html')
@@ -228,18 +275,60 @@ def generar_pdf():
     from fpdf import FPDF
     data = request.get_json()
     texto = data.get('texto', '').strip()
-    titulo = data.get('titulo', 'Documento Jarvis').strip()
     if not texto:
         return jsonify({'error': 'texto vacio'}), 400
 
+    def limpiar_latin1(txt):
+        return txt.encode('latin-1', errors='replace').decode('latin-1')
+
+    lineas = texto.split(chr(10))
+    titulo = limpiar_latin1(lineas[0].strip()) if lineas and lineas[0].strip() else 'Documento'
+    resto_lineas = lineas[1:] if lineas and lineas[0].strip() == titulo else lineas
+
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font('Helvetica', 'B', 16)
+    pdf.set_auto_page_break(auto=True, margin=20)
+
+    pdf.set_font('Helvetica', 'B', 18)
+    pdf.set_text_color(20, 20, 20)
     pdf.multi_cell(0, 10, titulo)
-    pdf.ln(4)
-    pdf.set_font('Helvetica', '', 12)
-    texto_limpio = texto.encode('latin-1', errors='replace').decode('latin-1')
-    pdf.multi_cell(0, 8, texto_limpio)
+    pdf.set_draw_color(180, 180, 180)
+    pdf.set_line_width(0.4)
+    pdf.line(10, pdf.get_y() + 1, 200, pdf.get_y() + 1)
+    pdf.ln(8)
+
+    for linea in resto_lineas:
+        linea_limpia = limpiar_latin1(linea.strip())
+
+        if not linea_limpia:
+            pdf.ln(3)
+            continue
+
+        if linea_limpia.startswith('### '):
+            pdf.set_font('Helvetica', 'B', 12)
+            pdf.set_text_color(40, 40, 40)
+            pdf.multi_cell(0, 7, linea_limpia[4:])
+            pdf.ln(1)
+        elif linea_limpia.startswith('## '):
+            pdf.set_font('Helvetica', 'B', 14)
+            pdf.set_text_color(30, 30, 30)
+            pdf.multi_cell(0, 8, linea_limpia[3:])
+            pdf.ln(2)
+        elif linea_limpia.startswith('# '):
+            pdf.set_font('Helvetica', 'B', 16)
+            pdf.set_text_color(20, 20, 20)
+            pdf.multi_cell(0, 9, linea_limpia[2:])
+            pdf.ln(2)
+        elif linea_limpia.startswith(('- ', '• ', '* ')):
+            pdf.set_font('Helvetica', '', 11)
+            pdf.set_text_color(30, 30, 30)
+            pdf.set_x(15)
+            pdf.multi_cell(0, 6.5, '•  ' + linea_limpia[2:])
+        else:
+            pdf.set_font('Helvetica', '', 11)
+            pdf.set_text_color(30, 30, 30)
+            texto_render = re.sub(r'\*\*(.*?)\*\*', r'\1', linea_limpia)
+            pdf.multi_cell(0, 6.5, texto_render)
 
     salida = bytes(pdf.output())
     return Response(
@@ -338,7 +427,7 @@ def chat():
             'Usa siempre este dato exacto si te preguntan la hora o la fecha, '
             'nunca inventes ni calcules una hora distinta. '
             f'La ubicacion actual del usuario es: {ubicacion_usuario}.'
-            ' Si el usuario pregunta por sus tareas, actividades pendientes, que le '
+            ' Si el usuario te pide explicitamente que le hagas, redactes, generes o entregues algo como documento, informe, ensayo, actividad o PDF (por ejemplo: hazme esto en pdf, redactame esta actividad, necesito un documento con esto), responde normalmente con el contenido solicitado y al FINAL agrega en una linea aparte, exactamente: [GENERAR_PDF]. NO uses esta etiqueta en conversacion normal, solo cuando el usuario claramente pida un documento o algo para entregar. Nunca la menciones en tu respuesta hablada. '' Si el usuario pregunta por sus tareas, actividades pendientes, que le '
             'falta entregar, o el estado de sus entregas en la plataforma de su '
             'instructor, NUNCA digas que no tienes acceso. En vez de eso SIEMPRE '
             'responde incluyendo en tu texto, exactamente, la etiqueta '
@@ -518,11 +607,14 @@ def chat():
         elif imagen_base64:
             texto_guardar_usuario = f'{mensaje_usuario} [con una imagen adjunta]'
 
+        mostrar_pdf = '[GENERAR_PDF]' in respuesta
+        respuesta = respuesta.replace('[GENERAR_PDF]', '').strip()
+
         historial.append({'role': 'user', 'texto': texto_guardar_usuario})
         historial.append({'role': 'assistant', 'texto': respuesta})
         guardar_memoria(usuario_id, historial)
 
-        return jsonify({'respuesta': respuesta})
+        return jsonify({'respuesta': respuesta, 'mostrar_pdf': mostrar_pdf})
     except requests.exceptions.HTTPError as e:
         print(e)
         if e.response is not None and e.response.status_code == 429:

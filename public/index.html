@@ -264,12 +264,12 @@ inputDocumento.addEventListener('change', () => {
 });
 btnQuitarDocumento.addEventListener('click', () => { documentoSeleccionado = null; documentoNombreActual = ''; inputDocumento.value = ''; actualizarPreview(); });
 
-function agregarMensaje(txt, clase, imagenSrc) {
+function agregarMensaje(txt, clase, imagenSrc, mostrarPdf) {
   const div = document.createElement('div');
   div.className = 'msg ' + clase;
   if (txt) { const p = document.createElement('div'); p.textContent = txt; div.appendChild(p); }
   if (imagenSrc) { const img = document.createElement('img'); img.src = imagenSrc; div.appendChild(img); }
-  if (clase === 'jarvis' && txt) {
+  if (clase === 'jarvis' && txt && mostrarPdf) {
     const btn = document.createElement('button');
     btn.className = 'btnPdf';
     btn.textContent = '📄 Descargar como PDF';
@@ -286,7 +286,7 @@ async function descargarPdf(texto) {
     const res = await fetch('/generar_pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texto, titulo: 'Jarvis' })
+      body: JSON.stringify({ texto })
     });
     if (!res.ok) throw new Error('fallo generando pdf');
     const blob = await res.blob();
@@ -350,7 +350,7 @@ async function enviarMensaje() {
     const data = await res.json();
     const { textoLimpio, urls } = procesarAcciones(data.respuesta || '');
     ultimoMsg.remove();
-    agregarMensaje(textoLimpio, 'jarvis');
+    agregarMensaje(textoLimpio, 'jarvis', null, data.mostrar_pdf);
     hablar(textoLimpio);
     urls.forEach(url => window.open(url, '_blank'));
   } catch (err) {

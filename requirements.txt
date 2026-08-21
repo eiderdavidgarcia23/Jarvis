@@ -2,3 +2,8 @@ flask
 flask-cors
 python-dotenv
 requests
+pypdf
+beautifulsoup4
+fpdf2
+piper-tts
+gunicorn
