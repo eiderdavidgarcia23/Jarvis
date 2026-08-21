@@ -214,7 +214,8 @@ def extraer_texto_documento(base64_data, nombre_archivo):
 
 @app.before_request
 def requerir_login():
-    if request.path == '/login' or request.path.startswith('/static'):
+    rutas_publicas = ('/login', '/manifest.json', '/icon.svg', '/sw.js')
+    if request.path in rutas_publicas or request.path.startswith('/static'):
         return
     if not session.get('autenticado'):
         if request.path == '/':

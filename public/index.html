@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>J.A.R.V.I.S.</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#05070d">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <style>
   * { box-sizing: border-box; }
   html, body {
@@ -379,5 +382,12 @@ if (SpeechRecognition) {
 } else { btnVoz.style.display = 'none'; }
 </script>
 
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+</script>
 </body>
 </html>
