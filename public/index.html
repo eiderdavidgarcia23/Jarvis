@@ -60,6 +60,18 @@
   }
   .iconBtn:active { opacity: 0.7; }
   .iconBtn.activo { background: #3a1414; border-color: #ff5050; color: #ff5050; }
+  #menuAdjuntos {
+    display: none; position: absolute; bottom: 54px; left: 0;
+    background: #10151f; border: 1px solid #00e5ff33; border-radius: 16px;
+    padding: 6px; min-width: 170px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 10;
+  }
+  .opcionAdjunto {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: transparent; border: none; color: #00e5ff;
+    padding: 10px 12px; border-radius: 10px; font-size: 14px;
+    font-family: 'Courier New', monospace; text-align: left;
+  }
+  .opcionAdjunto:active { background: #1a2332; }
   #btnEnviar {
     width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%;
     background: #00e5ff; color: #05070d; border: none; font-size: 20px; font-weight: bold;
@@ -94,19 +106,40 @@
 </div>
 
 <div id="inputArea">
-  <button id="btnAdjuntar" class="iconBtn" title="Imagen">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-      <circle cx="12" cy="13" r="4"></circle>
-    </svg>
-  </button>
+  <div style="position:relative;">
+    <button id="btnMas" class="iconBtn" title="Agregar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    </button>
+    <div id="menuAdjuntos">
+      <button type="button" class="opcionAdjunto" id="opCamara">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+          <circle cx="12" cy="13" r="4"></circle>
+        </svg>
+        Cámara
+      </button>
+      <button type="button" class="opcionAdjunto" id="opFotos">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
+        </svg>
+        Fotos
+      </button>
+      <button type="button" class="opcionAdjunto" id="opArchivos">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        Archivos
+      </button>
+    </div>
+  </div>
+  <input type="file" id="inputCamara" accept="image/*" capture="environment" style="display:none">
   <input type="file" id="inputArchivo" accept="image/*" style="display:none">
-  <button id="btnDocumento" class="iconBtn" title="Documento">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-      <polyline points="14 2 14 8 20 8"></polyline>
-    </svg>
-  </button>
   <input type="file" id="inputDocumento" accept=".pdf,.txt" style="display:none">
   <input type="text" id="texto" placeholder="Habla con Jarvis...">
   <button id="btnVoz" class="iconBtn">
@@ -220,9 +253,13 @@ const chat = document.getElementById('chat');
 const texto = document.getElementById('texto');
 const btnEnviar = document.getElementById('btnEnviar');
 const btnVoz = document.getElementById('btnVoz');
-const btnAdjuntar = document.getElementById('btnAdjuntar');
+const btnMas = document.getElementById('btnMas');
+const menuAdjuntos = document.getElementById('menuAdjuntos');
+const opCamara = document.getElementById('opCamara');
+const opFotos = document.getElementById('opFotos');
+const opArchivos = document.getElementById('opArchivos');
+const inputCamara = document.getElementById('inputCamara');
 const inputArchivo = document.getElementById('inputArchivo');
-const btnDocumento = document.getElementById('btnDocumento');
 const inputDocumento = document.getElementById('inputDocumento');
 const previewArea = document.getElementById('previewArea');
 const previewImg = document.getElementById('previewImg');
@@ -242,17 +279,31 @@ function actualizarPreview() {
   chipDocumento.style.display = documentoSeleccionado ? 'flex' : 'none';
 }
 
-btnAdjuntar.addEventListener('click', () => inputArchivo.click());
-inputArchivo.addEventListener('change', () => {
-  const archivo = inputArchivo.files[0];
+function toggleMenu(mostrar) {
+  menuAdjuntos.style.display = mostrar ? 'block' : 'none';
+}
+
+btnMas.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMenu(menuAdjuntos.style.display !== 'block');
+});
+document.addEventListener('click', () => toggleMenu(false));
+
+function manejarImagenSeleccionada(archivo) {
   if (!archivo) return;
   const reader = new FileReader();
   reader.onload = () => { imagenSeleccionada = reader.result; previewImg.src = imagenSeleccionada; actualizarPreview(); };
   reader.readAsDataURL(archivo);
-});
-btnQuitarImagen.addEventListener('click', () => { imagenSeleccionada = null; inputArchivo.value = ''; actualizarPreview(); });
+}
 
-btnDocumento.addEventListener('click', () => inputDocumento.click());
+opCamara.addEventListener('click', () => { toggleMenu(false); inputCamara.click(); });
+opFotos.addEventListener('click', () => { toggleMenu(false); inputArchivo.click(); });
+opArchivos.addEventListener('click', () => { toggleMenu(false); inputDocumento.click(); });
+
+inputCamara.addEventListener('change', () => { manejarImagenSeleccionada(inputCamara.files[0]); inputCamara.value = ''; });
+inputArchivo.addEventListener('change', () => { manejarImagenSeleccionada(inputArchivo.files[0]); inputArchivo.value = ''; });
+btnQuitarImagen.addEventListener('click', () => { imagenSeleccionada = null; actualizarPreview(); });
+
 inputDocumento.addEventListener('change', () => {
   const archivo = inputDocumento.files[0];
   if (!archivo) return;
