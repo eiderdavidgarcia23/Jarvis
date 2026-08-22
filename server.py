@@ -22,11 +22,11 @@ app.secret_key = os.environ.get('SECRET_KEY', 'clave-temporal-cambiar-en-env')
 app.permanent_session_lifetime = timedelta(days=30)
 JARVIS_PASSWORD = os.environ.get('JARVIS_PASSWORD', '')
 
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
-GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-MODELO_TEXTO = 'openai/gpt-oss-120b'
-MODELO_VISION = 'qwen/qwen3.6-27b'
+GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions'
+MODELO_TEXTO = 'gemini-3.7-flash'
+MODELO_VISION = 'gemini-3.7-flash'
 
 MEMORIA_DIR = os.path.join(os.path.dirname(__file__), 'memorias')
 RECORDATORIOS_DIR = os.path.join(os.path.dirname(__file__), 'recordatorios')
@@ -106,6 +106,50 @@ def procesar_recordatorios(usuario_id, texto):
             recordatorios.append({'texto': texto_r.strip(), 'fecha_hora': fecha_r.strip(), 'enviado': False})
         guardar_recordatorios(usuario_id, recordatorios)
     return re.sub(patron, '', texto).strip()
+
+def _bloque_imagen_gemini(imagen_base64):
+    match = re.match(r'data:(.*?);base64,(.+)', imagen_base64)
+    if match:
+        return {'type': 'image', 'mime_type': match.group(1), 'data': match.group(2)}
+    return {'type': 'image', 'mime_type': 'image/jpeg', 'data': imagen_base64}
+
+def gemini_generar(system_prompt, turnos, imagen_base64=None):
+    ultimo = turnos[-1]
+    previos = turnos[:-1]
+
+    input_steps = []
+    for h in previos:
+        tipo = 'user_input' if h['role'] == 'user' else 'model_output'
+        input_steps.append({'type': tipo, 'content': [{'type': 'text', 'text': h['texto']}]})
+
+    contenido_nuevo = []
+    if imagen_base64:
+        contenido_nuevo.append(_bloque_imagen_gemini(imagen_base64))
+    contenido_nuevo.append({'type': 'text', 'text': ultimo['texto']})
+    input_steps.append({'type': 'user_input', 'content': contenido_nuevo})
+
+    payload = {
+        'model': MODELO_TEXTO,
+        'input': input_steps,
+        'system_instruction': system_prompt
+    }
+
+    resp = requests.post(
+        GEMINI_URL,
+        headers={'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json'},
+        json=payload,
+        timeout=60
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    texto_final = ''
+    for step in data.get('steps', []):
+        if step.get('type') == 'model_output':
+            for item in step.get('content', []):
+                if item.get('type') == 'text':
+                    texto_final += item.get('text', '')
+    return texto_final.strip()
 
 def buscar_tavily(consulta):
     try:
@@ -393,7 +437,7 @@ def chat():
             'todas formas, sin sermonear. Eres extremadamente eficiente y directo, '
             'das respuestas concisas salvo que se te pida detalle. Nunca dices que '
             'eres un modelo de lenguaje ni mencionas la tecnologia detras tuyo '
-            '(Groq, IA, modelos, etc), ni rompes el personaje bajo ninguna '
+            '(Gemini, IA, modelos, etc), ni rompes el personaje bajo ninguna '
             'circunstancia. Recuerdas todo lo que el usuario te ha contado antes y lo '
             'usas con naturalidad. Si el usuario te pide abrir una pagina, sitio, '
             'video o app (YouTube, WhatsApp, Instagram, Google, Maps, Gmail, etc), '
@@ -428,7 +472,15 @@ def chat():
             'Usa siempre este dato exacto si te preguntan la hora o la fecha, '
             'nunca inventes ni calcules una hora distinta. '
             f'La ubicacion actual del usuario es: {ubicacion_usuario}.'
-            ' Si el usuario te pide explicitamente que le hagas, redactes, generes o entregues algo como documento, informe, ensayo, actividad o PDF (por ejemplo: hazme esto en pdf, redactame esta actividad, necesito un documento con esto), responde normalmente con el contenido solicitado y al FINAL agrega en una linea aparte, exactamente: [GENERAR_PDF]. NO uses esta etiqueta en conversacion normal, solo cuando el usuario claramente pida un documento o algo para entregar. Nunca la menciones en tu respuesta hablada. '' Si el usuario pregunta por sus tareas, actividades pendientes, que le '
+            ' Si el usuario te pide explicitamente que le hagas, redactes, generes o '
+            'entregues algo como documento, informe, ensayo, actividad o PDF (por '
+            'ejemplo: hazme esto en pdf, redactame esta actividad, necesito un '
+            'documento con esto), responde normalmente con el contenido solicitado y '
+            'al FINAL agrega en una linea aparte, exactamente: [GENERAR_PDF]. NO uses '
+            'esta etiqueta en conversacion normal, solo cuando el usuario claramente '
+            'pida un documento o algo para entregar. Nunca la menciones en tu respuesta '
+            'hablada.'
+            ' Si el usuario pregunta por sus tareas, actividades pendientes, que le '
             'falta entregar, o el estado de sus entregas en la plataforma de su '
             'instructor, NUNCA digas que no tienes acceso. En vez de eso SIEMPRE '
             'responde incluyendo en tu texto, exactamente, la etiqueta '
@@ -501,7 +553,6 @@ def chat():
                 'Nunca menciones esta etiqueta en tu respuesta hablada.'
             )
 
-        mensajes = [{'role': 'system', 'content': system_prompt}]
         historial_reciente = []
         caracteres_acumulados = 0
         LIMITE_CARACTERES = 4000
@@ -512,8 +563,6 @@ def chat():
                 break
             historial_reciente.append(h)
         historial_reciente.reverse()
-        for h in historial_reciente:
-            mensajes.append({'role': h['role'], 'content': h['texto']})
 
         if documento_base64:
             try:
@@ -527,73 +576,40 @@ def chat():
                 print('Error leyendo documento:', e)
                 mensaje_usuario = (mensaje_usuario or '') + ' [No se pudo leer el documento adjunto, señor]'
 
-        if imagen_base64:
-            modelo_usar = MODELO_VISION
-            mensajes.append({
-                'role': 'user',
-                'content': [
-                    {'type': 'text', 'text': mensaje_usuario or 'Describe esta imagen.'},
-                    {'type': 'image_url', 'image_url': {'url': imagen_base64}}
-                ]
-            })
-        else:
-            modelo_usar = MODELO_TEXTO
-            mensajes.append({'role': 'user', 'content': mensaje_usuario})
+        turnos = list(historial_reciente)
+        turnos.append({'role': 'user', 'texto': mensaje_usuario or ('Describe esta imagen.' if imagen_base64 else '')})
 
-        payload = {'model': modelo_usar, 'messages': mensajes, 'max_completion_tokens': 1024, 'temperature': 0.85}
-        if modelo_usar == MODELO_TEXTO:
-            payload['reasoning_effort'] = 'low'
-            payload['reasoning_format'] = 'hidden'
-
-        resp = requests.post(
-            GROQ_URL,
-            headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},
-            json=payload
-        )
-        resp.raise_for_status()
-        respuesta = resp.json()['choices'][0]['message'].get('content') or ''
+        respuesta = gemini_generar(system_prompt, turnos, imagen_base64 if imagen_base64 else None)
         if not respuesta.strip():
             respuesta = 'Parece que mis circuitos se distrajeron un instante, señor. ¿Podría repetirlo?'
 
         if '[REVISAR_TAREAS]' in respuesta:
             info_tareas = revisar_actividades_sena()
-            mensajes.append({'role': 'assistant', 'content': respuesta})
-            mensajes.append({
+            turnos.append({'role': 'assistant', 'texto': respuesta})
+            turnos.append({
                 'role': 'user',
-                'content': (
+                'texto': (
                     'Estado real de las actividades en la plataforma:' + chr(10) + info_tareas + chr(10) + chr(10)
                     + 'Con base en esto, responde al usuario de forma natural y clara, '
                     'destacando lo pendiente o urgente, en tu personaje de Jarvis.'
                 )
             })
-            resp_tareas = requests.post(
-                GROQ_URL,
-                headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},
-                json={'model': MODELO_TEXTO, 'messages': mensajes, 'temperature': 0.85}
-            )
-            resp_tareas.raise_for_status()
-            respuesta = resp_tareas.json()['choices'][0]['message']['content']
+            respuesta = gemini_generar(system_prompt, turnos)
 
         match_busqueda = re.search(r'\[BUSCAR:(.*?)\]', respuesta)
         if match_busqueda:
             consulta = match_busqueda.group(1).strip()
             resultados = buscar_tavily(consulta)
-            mensajes.append({'role': 'assistant', 'content': respuesta})
-            mensajes.append({
+            turnos.append({'role': 'assistant', 'texto': respuesta})
+            turnos.append({
                 'role': 'user',
-                'content': (
+                'texto': (
                     f'Resultados de la busqueda web para "{consulta}":\n{resultados}\n\n'
                     'Con base en esto, responde la pregunta original de forma natural '
                     'y concisa, en tu personaje de Jarvis.'
                 )
             })
-            resp2 = requests.post(
-                GROQ_URL,
-                headers={'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'},
-                json={'model': MODELO_TEXTO, 'messages': mensajes, 'temperature': 0.85}
-            )
-            resp2.raise_for_status()
-            respuesta = resp2.json()['choices'][0]['message']['content']
+            respuesta = gemini_generar(system_prompt, turnos)
 
         respuesta = procesar_recordatorios(usuario_id, respuesta)
         if MODO_AVANZADO:
