@@ -131,7 +131,8 @@ def gemini_generar(system_prompt, turnos, imagen_base64=None):
     payload = {
         'model': MODELO_TEXTO,
         'input': input_steps,
-        'system_instruction': system_prompt
+        'system_instruction': system_prompt,
+        'generation_config': {'thinking_level': 'low'}
     }
 
     resp = requests.post(
@@ -555,7 +556,7 @@ def chat():
 
         historial_reciente = []
         caracteres_acumulados = 0
-        LIMITE_CARACTERES = 4000
+        LIMITE_CARACTERES = 60000
         for h in reversed(historial):
             texto_h = h.get('texto', '') or ''
             caracteres_acumulados += len(texto_h)
