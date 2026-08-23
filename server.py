@@ -164,6 +164,8 @@ def guardar_preferencias(usuario_id, prefs):
     with open(ruta_preferencias(usuario_id), 'w', encoding='utf-8') as f:
         json.dump(prefs, f, ensure_ascii=False, indent=2)
 
+from almacenamiento_firebase import cargar_usuario, guardar_usuario, cargar_memoria, guardar_memoria, cargar_recordatorios, guardar_recordatorios, cargar_preferencias, guardar_preferencias
+
 def procesar_preferencias(usuario_id, texto):
     patron = r'\[PREFERENCIA:(.*?)\|(.*?)\]'
     matches = re.findall(patron, texto)
@@ -461,10 +463,15 @@ def login():
 @app.route('/estado_sesion')
 def estado_sesion():
     if session.get('autenticado'):
-        return jsonify({'autenticado': True, 'tipo': 'dueno'})
+        return jsonify({'autenticado': True, 'tipo': 'dueno', 'nombre': 'David'})
     if session.get('usuario_invitado'):
-        return jsonify({'autenticado': True, 'tipo': 'invitado'})
+        return jsonify({'autenticado': True, 'tipo': 'invitado', 'nombre': session.get('usuario_invitado')})
     return jsonify({'autenticado': False})
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'ok': True})
 
 @app.route('/')
 def index():
