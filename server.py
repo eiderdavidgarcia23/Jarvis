@@ -4,6 +4,8 @@ import re
 import requests
 import subprocess
 import tempfile
+import hmac
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import base64
@@ -11,15 +13,43 @@ import io
 from pypdf import PdfReader
 from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, send_from_directory, Response, session, redirect
+from werkzeug.security import generate_password_hash, check_password_hash
+from cryptography.fernet import Fernet
+import hashlib, base64 as b64_mod
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__, static_folder='public', static_url_path='')
-CORS(app)
 
-app.secret_key = os.environ.get('SECRET_KEY', 'clave-temporal-cambiar-en-env')
+# --- CORS restringido ---
+# Antes: CORS(app) permitía CUALQUIER origen. Ahora solo el/los origenes que definas
+# en CORS_ORIGINS (separados por coma) en tu .env. Si no defines nada, no se permite
+# ningun origen externo (mismo origen sigue funcionando siempre).
+_cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip()]
+if _cors_origins:
+    CORS(app, origins=_cors_origins, supports_credentials=True)
+
+# --- SECRET_KEY obligatorio ---
+# Antes tenia un valor por defecto hardcodeado ('clave-temporal-cambiar-en-env').
+# Como el codigo es publico en GitHub, ese valor por defecto permitia forjar
+# cookies de sesion validas. Ahora el servidor se niega a arrancar sin una clave
+# real definida en el entorno.
+app.secret_key = os.environ.get('SECRET_KEY')
+if not app.secret_key or app.secret_key == 'clave-temporal-cambiar-en-env':
+    raise RuntimeError(
+        'Falta SECRET_KEY (o sigue con el valor por defecto inseguro). '
+        'Genera una con: python3 -c "import secrets; print(secrets.token_hex(32))" '
+        'y ponla en tu .env como SECRET_KEY=...'
+    )
+
 app.permanent_session_lifetime = timedelta(days=30)
+
+# --- Configuracion de cookies de sesion ---
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('COOKIE_SECURE', '1') == '1'
+
 JARVIS_PASSWORD = os.environ.get('JARVIS_PASSWORD', '')
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
@@ -36,6 +66,53 @@ os.makedirs(RECORDATORIOS_DIR, exist_ok=True)
 os.makedirs(PREFERENCIAS_DIR, exist_ok=True)
 
 MODO_AVANZADO = os.environ.get('MODO_AVANZADO', '') == '1'
+
+USUARIOS_DIR = os.path.join(os.path.dirname(__file__), 'usuarios')
+os.makedirs(USUARIOS_DIR, exist_ok=True)
+
+# --- Rate limiting simple en memoria (sin dependencias nuevas) ---
+# Para algo mas robusto en produccion real usarias flask-limiter + redis, pero
+# para un proyecto personal en Termux esto es suficiente y no agrega paquetes.
+_intentos = {}  # clave -> lista de timestamps
+
+def limitar(clave, max_intentos, ventana_segundos):
+    ahora = time.time()
+    historial = _intentos.setdefault(clave, [])
+    historial[:] = [t for t in historial if ahora - t < ventana_segundos]
+    if len(historial) >= max_intentos:
+        return False
+    historial.append(ahora)
+    return True
+
+def ip_cliente():
+    return request.headers.get('X-Forwarded-For', request.remote_addr or 'desconocida').split(',')[0].strip()
+
+def _fernet():
+    clave_base = hashlib.sha256(app.secret_key.encode()).digest()
+    return Fernet(b64_mod.urlsafe_b64encode(clave_base))
+
+def cifrar(texto):
+    return _fernet().encrypt(texto.encode()).decode()
+
+def descifrar(texto_cifrado):
+    return _fernet().decrypt(texto_cifrado.encode()).decode()
+
+def usuario_valido(nombre):
+    return bool(re.match(r'^[a-zA-Z0-9_]{3,32}$', nombre or ''))
+
+def ruta_usuario(nombre):
+    return os.path.join(USUARIOS_DIR, f'{nombre.lower()}.json')
+
+def cargar_usuario(nombre):
+    ruta = ruta_usuario(nombre)
+    if not os.path.exists(ruta):
+        return None
+    with open(ruta, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def guardar_usuario(nombre, datos):
+    with open(ruta_usuario(nombre), 'w', encoding='utf-8') as f:
+        json.dump(datos, f, ensure_ascii=False, indent=2)
 
 BASE_DIR = os.path.dirname(__file__)
 PIPER_BIN = os.path.expanduser(os.environ.get('PIPER_BIN', os.path.join(BASE_DIR, 'piper', 'piper')))
@@ -113,7 +190,7 @@ def _bloque_imagen_gemini(imagen_base64):
         return {'type': 'image', 'mime_type': match.group(1), 'data': match.group(2)}
     return {'type': 'image', 'mime_type': 'image/jpeg', 'data': imagen_base64}
 
-def gemini_generar(system_prompt, turnos, imagen_base64=None):
+def gemini_generar(system_prompt, turnos, imagen_base64=None, clave_gemini=None):
     ultimo = turnos[-1]
     previos = turnos[:-1]
 
@@ -137,7 +214,7 @@ def gemini_generar(system_prompt, turnos, imagen_base64=None):
 
     resp = requests.post(
         GEMINI_URL,
-        headers={'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json'},
+        headers={'x-goog-api-key': clave_gemini or GEMINI_API_KEY, 'Content-Type': 'application/json'},
         json=payload,
         timeout=60
     )
@@ -241,6 +318,13 @@ def generar_audio(texto):
 def extraer_texto_documento(base64_data, nombre_archivo):
     match_data = re.match(r'data:.*?;base64,(.+)', base64_data)
     datos_b64 = match_data.group(1) if match_data else base64_data
+
+    # Limite de tamaño ANTES de decodificar, para evitar agotar memoria
+    # con un payload base64 gigante (DoS).
+    LIMITE_B64 = 20_000_000  # ~15 MB de archivo real
+    if len(datos_b64) > LIMITE_B64:
+        raise ValueError('documento demasiado grande')
+
     bytes_archivo = base64.b64decode(datos_b64)
 
     if nombre_archivo.lower().endswith('.pdf'):
@@ -257,26 +341,99 @@ def extraer_texto_documento(base64_data, nombre_archivo):
         texto = texto[:LIMITE] + chr(10) + '[...documento truncado por longitud...]'
     return texto.strip()
 
+def clave_gemini_funciona(clave):
+    try:
+        resp = requests.post(
+            GEMINI_URL,
+            headers={'x-goog-api-key': clave, 'Content-Type': 'application/json'},
+            json={'model': MODELO_TEXTO, 'input': [{'type': 'user_input', 'content': [{'type': 'text', 'text': 'hola'}]}]},
+            timeout=20
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+def usuario_id_actual():
+    """Deriva el usuario_id SIEMPRE de la sesion del servidor, nunca de datos
+    enviados por el cliente. Evita que un usuario pueda leer/tocar datos de otro
+    con solo cambiar un parametro."""
+    if session.get('autenticado'):
+        return 'dueno'
+    usuario_invitado = session.get('usuario_invitado')
+    if usuario_invitado:
+        return f'invitado_{usuario_invitado}'
+    return None
+
 @app.before_request
 def requerir_login():
-    rutas_publicas = ('/login', '/manifest.json', '/icon.svg', '/sw.js')
+    # /voz y /recordatorios/pendientes salieron de esta lista: ahora requieren sesion.
+    # /estado_sesion entra a la lista: debe poder responder aunque no haya sesion.
+    rutas_publicas = ('/login', '/registro', '/entrar', '/estado_sesion', '/manifest.json', '/icon.svg', '/sw.js', '/', '/chat')
     if request.path in rutas_publicas or request.path.startswith('/static'):
         return
-    if not session.get('autenticado'):
-        if request.path == '/':
-            return redirect('/login')
+    if not session.get('autenticado') and not session.get('usuario_invitado'):
         return jsonify({'error': 'no autenticado'}), 401
+
+@app.route('/registro', methods=['POST'])
+def registro():
+    if not limitar(f'registro:{ip_cliente()}', max_intentos=5, ventana_segundos=600):
+        return jsonify({'error': 'Demasiados intentos. Intente mas tarde.'}), 429
+
+    data = request.get_json()
+    nombre = (data.get('usuario') or '').strip()
+    clave_cuenta = data.get('clave_cuenta') or ''
+    clave_gemini = (data.get('clave_gemini') or '').strip()
+
+    if not usuario_valido(nombre):
+        return jsonify({'error': 'Usuario invalido. Use solo letras, numeros y guion bajo, 3 a 32 caracteres.'}), 400
+    if len(clave_cuenta) < 6:
+        return jsonify({'error': 'La contrasena debe tener al menos 6 caracteres.'}), 400
+    if not clave_gemini:
+        return jsonify({'error': 'Falta la clave de Gemini.'}), 400
+    if cargar_usuario(nombre):
+        return jsonify({'error': 'Ese usuario ya existe.'}), 400
+    if not clave_gemini_funciona(clave_gemini):
+        return jsonify({'error': 'Google rechazo esa clave de Gemini. Verifiquela.'}), 400
+
+    guardar_usuario(nombre, {
+        'clave_cuenta_hash': generate_password_hash(clave_cuenta),
+        'clave_gemini_cifrada': cifrar(clave_gemini)
+    })
+    session.permanent = True
+    session['usuario_invitado'] = nombre
+    return jsonify({'ok': True})
+
+@app.route('/entrar', methods=['POST'])
+def entrar():
+    if not limitar(f'entrar:{ip_cliente()}', max_intentos=10, ventana_segundos=600):
+        return jsonify({'error': 'Demasiados intentos. Intente mas tarde.'}), 429
+
+    data = request.get_json()
+    nombre = (data.get('usuario') or '').strip()
+    clave_cuenta = data.get('clave_cuenta') or ''
+
+    usuario = cargar_usuario(nombre)
+    if not usuario or not check_password_hash(usuario['clave_cuenta_hash'], clave_cuenta):
+        return jsonify({'error': 'Usuario o contrasena incorrectos.'}), 400
+
+    session.permanent = True
+    session['usuario_invitado'] = nombre
+    return jsonify({'ok': True})
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = ''
     if request.method == 'POST':
-        clave = request.form.get('clave', '')
-        if JARVIS_PASSWORD and clave == JARVIS_PASSWORD:
-            session.permanent = True
-            session['autenticado'] = True
-            return redirect('/')
-        error = 'Clave incorrecta, señor.'
+        if not limitar(f'login:{ip_cliente()}', max_intentos=10, ventana_segundos=600):
+            error = 'Demasiados intentos, señor. Espere un momento.'
+        else:
+            clave = request.form.get('clave', '')
+            # hmac.compare_digest evita timing attacks frente a un simple '=='
+            if JARVIS_PASSWORD and hmac.compare_digest(clave, JARVIS_PASSWORD):
+                session.permanent = True
+                session['autenticado'] = True
+                return redirect('/')
+            error = 'Clave incorrecta, señor.'
 
     return f'''<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
@@ -301,6 +458,14 @@ def login():
   {f'<p>{error}</p>' if error else ''}
 </form></body></html>'''
 
+@app.route('/estado_sesion')
+def estado_sesion():
+    if session.get('autenticado'):
+        return jsonify({'autenticado': True, 'tipo': 'dueno'})
+    if session.get('usuario_invitado'):
+        return jsonify({'autenticado': True, 'tipo': 'invitado'})
+    return jsonify({'autenticado': False})
+
 @app.route('/')
 def index():
     return send_from_directory('public', 'index.html')
@@ -311,6 +476,8 @@ def voz():
     texto = data.get('texto', '').strip()
     if not texto:
         return jsonify({'error': 'texto vacio'}), 400
+    if len(texto) > 4000:
+        return jsonify({'error': 'texto demasiado largo'}), 400
     audio_bytes = generar_audio(texto)
     if audio_bytes is None:
         return jsonify({'error': 'no se pudo generar audio'}), 500
@@ -385,7 +552,13 @@ def generar_pdf():
 
 @app.route('/recordatorios/pendientes')
 def recordatorios_pendientes():
-    usuario_id = request.args.get('usuario_id', '')
+    # Antes: usuario_id = request.args.get('usuario_id', '') -> IDOR, cualquiera
+    # podia leer/marcar como enviados los recordatorios de otro usuario con solo
+    # cambiar el parametro. Ahora se deriva SIEMPRE de la sesion del servidor.
+    usuario_id = usuario_id_actual()
+    if not usuario_id:
+        return jsonify({'error': 'no autenticado'}), 401
+
     recordatorios = cargar_recordatorios(usuario_id)
     ahora = datetime.now()
     pendientes = []
@@ -408,8 +581,22 @@ def recordatorios_pendientes():
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
+        if not limitar(f'chat:{ip_cliente()}', max_intentos=30, ventana_segundos=60):
+            return jsonify({'error': 'Demasiadas solicitudes, señor. Un momento.'}), 429
+
         data = request.get_json()
-        usuario_id = data.get('usuario_id', 'anonimo')
+        es_dueno = bool(session.get('autenticado'))
+        usuario_invitado = session.get('usuario_invitado')
+
+        clave_gemini_invitado = None
+        if usuario_invitado:
+            datos_usuario = cargar_usuario(usuario_invitado)
+            if datos_usuario:
+                clave_gemini_invitado = descifrar(datos_usuario['clave_gemini_cifrada'])
+            usuario_id = f'invitado_{usuario_invitado}'
+        else:
+            usuario_id = 'dueno' if es_dueno else 'anonimo'
+
         mensaje_usuario = data.get('mensaje', '')
         ubicacion_usuario = data.get('ubicacion', '') or 'desconocida'
         zona_horaria = data.get('zona_horaria', '') or 'UTC'
@@ -577,14 +764,16 @@ def chat():
                 print('Error leyendo documento:', e)
                 mensaje_usuario = (mensaje_usuario or '') + ' [No se pudo leer el documento adjunto, señor]'
 
+        if not es_dueno and not clave_gemini_invitado:
+            return jsonify({'error': 'clave_requerida'}), 401
+
         turnos = list(historial_reciente)
         turnos.append({'role': 'user', 'texto': mensaje_usuario or ('Describe esta imagen.' if imagen_base64 else '')})
-
-        respuesta = gemini_generar(system_prompt, turnos, imagen_base64 if imagen_base64 else None)
+        respuesta = gemini_generar(system_prompt, turnos, imagen_base64 if imagen_base64 else None, clave_gemini=clave_gemini_invitado)
         if not respuesta.strip():
             respuesta = 'Parece que mis circuitos se distrajeron un instante, señor. ¿Podría repetirlo?'
 
-        if '[REVISAR_TAREAS]' in respuesta:
+        if es_dueno and '[REVISAR_TAREAS]' in respuesta:
             info_tareas = revisar_actividades_sena()
             turnos.append({'role': 'assistant', 'texto': respuesta})
             turnos.append({
@@ -595,10 +784,12 @@ def chat():
                     'destacando lo pendiente o urgente, en tu personaje de Jarvis.'
                 )
             })
-            respuesta = gemini_generar(system_prompt, turnos)
+            respuesta = gemini_generar(system_prompt, turnos, clave_gemini=clave_gemini_invitado)
+        elif not es_dueno:
+            respuesta = respuesta.replace('[REVISAR_TAREAS]', '').strip()
 
         match_busqueda = re.search(r'\[BUSCAR:(.*?)\]', respuesta)
-        if match_busqueda:
+        if es_dueno and match_busqueda:
             consulta = match_busqueda.group(1).strip()
             resultados = buscar_tavily(consulta)
             turnos.append({'role': 'assistant', 'texto': respuesta})
@@ -610,7 +801,9 @@ def chat():
                     'y concisa, en tu personaje de Jarvis.'
                 )
             })
-            respuesta = gemini_generar(system_prompt, turnos)
+            respuesta = gemini_generar(system_prompt, turnos, clave_gemini=clave_gemini_invitado)
+        elif not es_dueno and match_busqueda:
+            respuesta = re.sub(r'\[BUSCAR:.*?\]', '', respuesta).strip()
 
         respuesta = procesar_recordatorios(usuario_id, respuesta)
         if MODO_AVANZADO:
@@ -627,7 +820,6 @@ def chat():
 
         mostrar_pdf = '[GENERAR_PDF]' in respuesta
         respuesta = respuesta.replace('[GENERAR_PDF]', '').strip()
-
         historial.append({'role': 'user', 'texto': texto_guardar_usuario})
         historial.append({'role': 'assistant', 'texto': respuesta})
         guardar_memoria(usuario_id, historial)
