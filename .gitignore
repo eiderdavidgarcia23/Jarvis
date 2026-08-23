@@ -8,3 +8,4 @@ piper/
 piper_voices/
 server.js.backup*
 patch*.py
+firebase-credenciales.json
