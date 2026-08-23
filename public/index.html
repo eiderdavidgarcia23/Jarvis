@@ -89,6 +89,48 @@
 
 <header>J.A.R.V.I.S.</header>
 
+<div id="pantallaCuenta" style="display:none; position:fixed; inset:0; z-index:100; background:#05070d; overflow-y:auto; padding:24px 16px; font-family:'Courier New', monospace;">
+  <div style="max-width:380px; margin:0 auto;">
+    <h1 style="color:#00e5ff; letter-spacing:4px; font-size:22px; text-align:center; margin-bottom:24px;">J.A.R.V.I.S.</h1>
+
+    <div id="cajaError" style="display:none; background:#331a1a; border:1px solid #ff505055; color:#ff8080; border-radius:10px; padding:12px; font-size:13px; margin-bottom:16px;"></div>
+
+    <div id="vistaEntrar">
+      <p style="color:#00e5ff99; font-size:13px; margin-bottom:14px;">Inicie sesion, senor.</p>
+      <input id="entrarUsuario" placeholder="Usuario" style="width:100%; padding:12px; margin-bottom:10px; border-radius:8px; border:1px solid #00e5ff44; background:#1a2332; color:white; font-size:16px; box-sizing:border-box;">
+      <input id="entrarClave" type="password" placeholder="Contrasena" style="width:100%; padding:12px; margin-bottom:14px; border-radius:8px; border:1px solid #00e5ff44; background:#1a2332; color:white; font-size:16px; box-sizing:border-box;">
+      <button id="btnEntrar" style="width:100%; padding:13px; border-radius:8px; border:none; background:#00e5ff; color:#05070d; font-weight:bold; font-size:16px; margin-bottom:12px;">Entrar</button>
+      <p style="text-align:center; font-size:13px;"><a href="#" id="irARegistro" style="color:#00e5ff;">¿Nuevo? Cree su acceso</a></p>
+    </div>
+
+    <div id="vistaRegistro" style="display:none;">
+      <p style="color:#00e5ff99; font-size:13px; margin-bottom:14px;">Cree su acceso, senor.</p>
+      <input id="regUsuario" placeholder="Elija un usuario" style="width:100%; padding:12px; margin-bottom:10px; border-radius:8px; border:1px solid #00e5ff44; background:#1a2332; color:white; font-size:16px; box-sizing:border-box;">
+      <input id="regClave" type="password" placeholder="Elija una contrasena (min 6)" style="width:100%; padding:12px; margin-bottom:14px; border-radius:8px; border:1px solid #00e5ff44; background:#1a2332; color:white; font-size:16px; box-sizing:border-box;">
+
+      <div style="background:#10151f; border:1px solid #00e5ff33; border-radius:10px; padding:12px; margin-bottom:14px;">
+        <button id="btnTutorial" style="width:100%; background:transparent; border:none; color:#00e5ff; font-size:13px; text-align:left; padding:0;">💡 ¿Es la primera vez? Vea el tutorial ▾</button>
+        <div id="tutorialTexto" style="display:none; margin-top:10px; font-size:12.5px; color:#00e5ff99; line-height:1.6;">
+          1. Toque "Abrir Google AI Studio".<br>
+          2. Inicie sesion con su cuenta de Google.<br>
+          3. Toque "Create API key" (o "Crear clave de API").<br>
+          4. Copie la clave generada (empieza distinto segun su cuenta).<br>
+          5. Vuelva aqui y peguela abajo.
+        </div>
+      </div>
+
+      <a href="https://aistudio.google.com/apikey" target="_blank" style="display:block; text-align:center; padding:12px; border-radius:8px; border:1px solid #00e5ff44; color:#00e5ff; text-decoration:none; font-size:14px; margin-bottom:10px;">Abrir Google AI Studio →</a>
+
+      <input id="regClaveGemini" placeholder="Pegue aqui su llave (AQ... o AIza...)" style="width:100%; padding:12px; margin-bottom:14px; border-radius:8px; border:1px solid #00e5ff44; background:#1a2332; color:white; font-size:14px; box-sizing:border-box;">
+
+      <button id="btnRegistrar" style="width:100%; padding:13px; border-radius:8px; border:none; background:#00e5ff; color:#05070d; font-weight:bold; font-size:16px; margin-bottom:12px;">Activar JARVIS</button>
+      <p style="text-align:center; font-size:13px;"><a href="#" id="irAEntrar" style="color:#00e5ff;">¿Ya tiene cuenta? Inicie sesion</a></p>
+    </div>
+
+    <p style="text-align:center; font-size:11px; color:#00e5ff66; margin-top:20px;">Su llave se guarda cifrada y solo se usa para sus propias conversaciones.</p>
+  </div>
+</div>
+
 <div id="orbContainer">
   <canvas id="orbCanvas"></canvas>
   <div id="estado">En reposo</div>
@@ -154,6 +196,77 @@
 </div>
 
 <script>
+const pantallaCuenta = document.getElementById('pantallaCuenta');
+const vistaEntrar = document.getElementById('vistaEntrar');
+const vistaRegistro = document.getElementById('vistaRegistro');
+const cajaError = document.getElementById('cajaError');
+
+function mostrarError(msg) {
+  cajaError.textContent = msg;
+  cajaError.style.display = 'block';
+}
+function ocultarError() { cajaError.style.display = 'none'; }
+
+document.getElementById('irARegistro').addEventListener('click', (e) => {
+  e.preventDefault(); ocultarError();
+  vistaEntrar.style.display = 'none'; vistaRegistro.style.display = 'block';
+});
+document.getElementById('irAEntrar').addEventListener('click', (e) => {
+  e.preventDefault(); ocultarError();
+  vistaRegistro.style.display = 'none'; vistaEntrar.style.display = 'block';
+});
+document.getElementById('btnTutorial').addEventListener('click', () => {
+  const t = document.getElementById('tutorialTexto');
+  t.style.display = t.style.display === 'block' ? 'none' : 'block';
+});
+
+document.getElementById('btnEntrar').addEventListener('click', async () => {
+  ocultarError();
+  const usuario = document.getElementById('entrarUsuario').value.trim();
+  const clave_cuenta = document.getElementById('entrarClave').value;
+  try {
+    const res = await fetch('/entrar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario, clave_cuenta })
+    });
+    const data = await res.json();
+    if (!res.ok) { mostrarError(data.error || 'Error al entrar'); return; }
+    pantallaCuenta.style.display = 'none';
+  } catch (err) { mostrarError('Error de conexion.'); }
+});
+
+document.getElementById('btnRegistrar').addEventListener('click', async () => {
+  ocultarError();
+  const usuario = document.getElementById('regUsuario').value.trim();
+  const clave_cuenta = document.getElementById('regClave').value;
+  const clave_gemini = document.getElementById('regClaveGemini').value.trim();
+  const boton = document.getElementById('btnRegistrar');
+  boton.textContent = 'Verificando...'; boton.disabled = true;
+  try {
+    const res = await fetch('/registro', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario, clave_cuenta, clave_gemini })
+    });
+    const data = await res.json();
+    if (!res.ok) { mostrarError(data.error || 'Error al registrar'); boton.textContent = 'Activar JARVIS'; boton.disabled = false; return; }
+    pantallaCuenta.style.display = 'none';
+  } catch (err) {
+    mostrarError('Error de conexion.'); boton.textContent = 'Activar JARVIS'; boton.disabled = false;
+  }
+});
+
+(async () => {
+  try {
+    const res = await fetch('/estado_sesion');
+    const data = await res.json();
+    if (!data.autenticado) {
+      pantallaCuenta.style.display = 'block';
+    }
+  } catch (err) {
+    pantallaCuenta.style.display = 'block';
+  }
+})();
+
 let usuarioId = localStorage.getItem('jarvisUsuarioId');
 if (!usuarioId) {
   usuarioId = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
@@ -397,18 +510,28 @@ async function enviarMensaje() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        usuario_id: usuarioId, mensaje, ubicacion: ubicacionTexto, zona_horaria: zonaHoraria,
+        mensaje, ubicacion: ubicacionTexto, zona_horaria: zonaHoraria,
         imagen: imagenAEnviar || '', documento: documentoAEnviar || '', documento_nombre: nombreDocAEnviar
       })
     });
     const data = await res.json();
+    if (!res.ok) {
+      ultimoMsg.remove();
+      const msgError = res.status === 429
+        ? 'Demasiadas solicitudes seguidas, señor. Espere un momento.'
+        : (data.error || 'Algo ha fallado de mi lado, señor.');
+      agregarMensaje(msgError, 'jarvis');
+      setEstado('reposo', 'En reposo');
+      return;
+    }
     const { textoLimpio, urls } = procesarAcciones(data.respuesta || '');
     ultimoMsg.remove();
     agregarMensaje(textoLimpio, 'jarvis', null, data.mostrar_pdf);
     hablar(textoLimpio);
     urls.forEach(url => window.open(url, '_blank'));
   } catch (err) {
-    ultimoMsg.textContent = 'Error: ' + err.message;
+    ultimoMsg.remove();
+    agregarMensaje('Error de conexion, señor.', 'jarvis');
     setEstado('reposo', 'En reposo');
   }
 }
