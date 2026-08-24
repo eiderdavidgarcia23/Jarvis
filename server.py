@@ -414,6 +414,13 @@ def entrar():
     nombre = (data.get('usuario') or '').strip()
     clave_cuenta = data.get('clave_cuenta') or ''
 
+    if nombre.lower() == 'david':
+        if JARVIS_PASSWORD and hmac.compare_digest(clave_cuenta, JARVIS_PASSWORD):
+            session.permanent = True
+            session['autenticado'] = True
+            return jsonify({'ok': True})
+        return jsonify({'error': 'Usuario o contrasena incorrectos.'}), 400
+
     usuario = cargar_usuario(nombre)
     if not usuario or not check_password_hash(usuario['clave_cuenta_hash'], clave_cuenta):
         return jsonify({'error': 'Usuario o contrasena incorrectos.'}), 400
@@ -424,41 +431,7 @@ def entrar():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    error = ''
-    if request.method == 'POST':
-        if not limitar(f'login:{ip_cliente()}', max_intentos=10, ventana_segundos=600):
-            error = 'Demasiados intentos, señor. Espere un momento.'
-        else:
-            clave = request.form.get('clave', '')
-            # hmac.compare_digest evita timing attacks frente a un simple '=='
-            if JARVIS_PASSWORD and hmac.compare_digest(clave, JARVIS_PASSWORD):
-                session.permanent = True
-                session['autenticado'] = True
-                return redirect('/')
-            error = 'Clave incorrecta, señor.'
-
-    return f'''<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>J.A.R.V.I.S. - Acceso</title>
-<style>
-  body {{ margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
-    background:#05070d; font-family:'Courier New', monospace; }}
-  form {{ background:#10151f; border:1px solid #00e5ff33; border-radius:16px; padding:32px;
-    width:min(90vw, 320px); text-align:center; }}
-  h1 {{ color:#00e5ff; letter-spacing:4px; font-size:20px; margin-bottom:24px; }}
-  input {{ width:100%; padding:12px; margin-bottom:12px; border-radius:8px; border:1px solid #00e5ff44;
-    background:#1a2332; color:white; font-size:16px; box-sizing:border-box; }}
-  button {{ width:100%; padding:12px; border-radius:8px; border:none; background:#00e5ff;
-    color:#05070d; font-weight:bold; font-size:16px; }}
-  p {{ color:#ff5050; font-size:13px; }}
-</style></head><body>
-<form method="POST">
-  <h1>J.A.R.V.I.S.</h1>
-  <input type="password" name="clave" placeholder="Clave de acceso" autofocus>
-  <button type="submit">Entrar</button>
-  {f'<p>{error}</p>' if error else ''}
-</form></body></html>'''
+    return redirect('/')
 
 @app.route('/estado_sesion')
 def estado_sesion():

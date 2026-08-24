@@ -99,7 +99,7 @@
       btn.style.display = 'inline-block';
       btn.addEventListener('click', async () => {
         await fetch('/logout', { method: 'POST' });
-        window.location.href = '/login';
+        window.location.href = '/';
       });
     }
   } catch (e) { console.error('Error cargando estado de sesion:', e); }
