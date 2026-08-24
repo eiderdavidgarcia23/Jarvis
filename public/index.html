@@ -83,13 +83,49 @@
     #chat { max-height: 28vh; }
     .msg { max-width: 60%; }
   }
+  #btnHamburguesa { display: none; background: transparent; border: 1px solid #00e5ff44; color: #00e5ff; width: 34px; height: 34px; border-radius: 8px; font-size: 16px; cursor: pointer; align-items: center; justify-content: center; }
+  .overlay-sidebar { position: fixed; inset: 0; z-index: 200; display: none; }
+  .overlay-sidebar.visible { display: block; }
+  .overlay-fondo { position: absolute; inset: 0; background: #000000aa; }
+  .sidebar-panel {
+    position: relative; width: min(78vw, 260px); height: 100%;
+    background: #070a12; border-right: 1px solid #00e5ff33;
+    display: flex; flex-direction: column; padding: 16px;
+  }
+  .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .sidebar-header span { color: #00e5ff; letter-spacing: 3px; font-size: 15px; }
+  .btn-cerrar-sidebar { background: transparent; border: none; color: #00e5ff99; font-size: 18px; }
+  .sidebar-titulo-seccion { font-size: 10px; letter-spacing: 2px; color: #00e5ff66; margin: 14px 0 8px 4px; text-transform: uppercase; }
+  .sidebar-item {
+    display: block; width: 100%; text-align: left; background: transparent;
+    border: 1px solid transparent; color: #d8f6ffcc; padding: 10px 12px;
+    border-radius: 10px; font-size: 14px; font-family: 'Courier New', monospace;
+    margin-bottom: 4px;
+  }
+  .sidebar-item.activo { background: #00e5ff14; border-color: #00e5ff44; color: #00e5ff; }
+  .sidebar-footer { margin-top: auto; font-size: 11px; color: #00e5ff77; padding-top: 12px; border-top: 1px solid #00e5ff22; }
 </style>
 </head>
 <body>
 
-<header>J.A.R.V.I.S. <span id="nombreUsuarioHeader" style="font-size:0.6em; opacity:0.8;"></span> <button id="btnCerrarSesion" style="display:none; font-size:0.5em; margin-left:10px; padding:4px 10px; border-radius:6px; border:1px solid #00e5ff44; background:#1a2332; color:white; cursor:pointer;">Cerrar sesion</button></header>
+<header>J.A.R.V.I.S. <span id="nombreUsuarioHeader" style="font-size:0.6em; opacity:0.8;"></span> <button id="btnCerrarSesion" style="display:none; font-size:0.5em; margin-left:10px; padding:4px 10px; border-radius:6px; border:1px solid #00e5ff44; background:#1a2332; color:white; cursor:pointer;">Cerrar sesion</button><button id="btnHamburguesa" onclick="abrirSidebar()">☰</button></header>
+<div id="overlaySidebar" class="overlay-sidebar">
+  <div class="overlay-fondo" onclick="cerrarSidebar()"></div>
+  <div class="sidebar-panel">
+    <div class="sidebar-header">
+      <span>J.A.R.V.I.S.</span>
+      <button class="btn-cerrar-sidebar" onclick="cerrarSidebar()">✕</button>
+    </div>
+    <div class="sidebar-titulo-seccion">Navegación</div>
+    <button class="sidebar-item activo" data-vista="panel" onclick="mostrarVista('panel')">🎛️ Panel</button>
+    <button class="sidebar-item" data-vista="programas" onclick="mostrarVista('programas')">💻 Programas</button>
+    <button class="sidebar-item" data-vista="usuarios" onclick="mostrarVista('usuarios')">👥 Usuarios</button>
+    <button class="sidebar-item" data-vista="chat" onclick="mostrarVista('chat')">💬 Chat</button>
+    <div class="sidebar-footer" id="sidebarFooterInfo"></div>
+  </div>
+</div>
 <script>
-(async function() {
+async function actualizarHeaderSesion() {
   try {
     const res = await fetch('/estado_sesion');
     const data = await res.json();
@@ -103,7 +139,51 @@
       });
     }
   } catch (e) { console.error('Error cargando estado de sesion:', e); }
-})();
+}
+actualizarHeaderSesion();
+
+const mapaVistas = { panel: '/panel.html', programas: '/programas.html', usuarios: '/usuarios.html' };
+
+async function inicializarVistaSegunRol() {
+  try {
+    const res = await fetch('/estado_sesion');
+    const data = await res.json();
+    if (data.autenticado && data.rol === 'administrador') {
+      document.getElementById('btnHamburguesa').style.display = 'flex';
+      document.getElementById('sidebarFooterInfo').textContent = 'Sesión: ' + data.nombre;
+      mostrarVista('panel');
+    } else {
+      mostrarVista('chat');
+    }
+  } catch (e) {
+    mostrarVista('chat');
+  }
+}
+
+function mostrarVista(vista) {
+  document.getElementById('vistaChat').style.display = vista === 'chat' ? 'flex' : 'none';
+  document.getElementById('vistaSecundaria').style.display = vista === 'chat' ? 'none' : 'flex';
+
+  if (vista !== 'chat') {
+    const iframe = document.getElementById('iframeSecundario');
+    const nuevoSrc = mapaVistas[vista];
+    if (!iframe.src.endsWith(nuevoSrc)) {
+      iframe.src = nuevoSrc;
+    }
+  }
+
+  document.querySelectorAll('.sidebar-item').forEach(el => {
+    el.classList.toggle('activo', el.dataset.vista === vista);
+  });
+
+  cerrarSidebar();
+}
+
+function abrirSidebar() { document.getElementById('overlaySidebar').classList.add('visible'); }
+function cerrarSidebar() { document.getElementById('overlaySidebar').classList.remove('visible'); }
+
+window.mostrarVista = mostrarVista;
+inicializarVistaSegunRol();
 </script>
 
 <div id="pantallaCuenta" style="display:none; position:fixed; inset:0; z-index:100; background:#05070d; overflow-y:auto; padding:24px 16px; font-family:'Courier New', monospace;">
@@ -148,6 +228,7 @@
   </div>
 </div>
 
+<div id="vistaChat" style="display:flex; flex-direction:column; flex:1; min-height:0;">
 <div id="orbContainer">
   <canvas id="orbCanvas"></canvas>
   <div id="estado">En reposo</div>
@@ -211,6 +292,11 @@
   </button>
   <button id="btnEnviar">➤</button>
 </div>
+</div>
+
+<div id="vistaSecundaria" style="display:none; flex:1; min-height:0;">
+  <iframe id="iframeSecundario" src="" style="width:100%; height:100%; border:none; background:#05070d;"></iframe>
+</div>
 
 <script>
 const pantallaCuenta = document.getElementById('pantallaCuenta');
@@ -249,6 +335,7 @@ document.getElementById('btnEntrar').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) { mostrarError(data.error || 'Error al entrar'); return; }
     pantallaCuenta.style.display = 'none';
+    actualizarHeaderSesion();
   } catch (err) { mostrarError('Error de conexion.'); }
 });
 

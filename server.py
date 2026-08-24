@@ -164,7 +164,9 @@ def guardar_preferencias(usuario_id, prefs):
     with open(ruta_preferencias(usuario_id), 'w', encoding='utf-8') as f:
         json.dump(prefs, f, ensure_ascii=False, indent=2)
 
-from almacenamiento_firebase import cargar_usuario, guardar_usuario, cargar_memoria, guardar_memoria, cargar_recordatorios, guardar_recordatorios, cargar_preferencias, guardar_preferencias
+from almacenamiento_firebase import cargar_usuario, guardar_usuario, cargar_memoria, guardar_memoria, cargar_recordatorios, guardar_recordatorios, cargar_preferencias, guardar_preferencias, cargar_uso_ia, guardar_uso_ia
+from estado_coopmocur import generar_resumen_coopmocur
+from almacenamiento_firebase import listar_usuarios, eliminar_usuario
 
 def procesar_preferencias(usuario_id, texto):
     patron = r'\[PREFERENCIA:(.*?)\|(.*?)\]'
@@ -355,6 +357,81 @@ def clave_gemini_funciona(clave):
     except Exception:
         return False
 
+def obtener_claves_gemini(datos_usuario):
+    """Lista de claves Gemini (cifradas) del usuario. Compatible con el formato
+    viejo de una sola clave en 'clave_gemini_cifrada'."""
+    if not datos_usuario:
+        return []
+    claves = datos_usuario.get('claves_gemini_cifradas')
+    if claves:
+        return claves
+    vieja = datos_usuario.get('clave_gemini_cifrada')
+    return [vieja] if vieja else []
+
+def fecha_hoy_str():
+    return datetime.now().strftime('%Y-%m-%d')
+
+def marcar_clave_agotada(nombre_usuario, indice, modelo):
+    uso = cargar_uso_ia(nombre_usuario)
+    clave_uso = uso.setdefault(str(indice), {})
+    clave_uso[modelo] = {'fecha': fecha_hoy_str(), 'agotada': True, 'usados': clave_uso.get(modelo, {}).get('usados', 0)}
+    guardar_uso_ia(nombre_usuario, uso)
+
+def clave_marcada_agotada_hoy(nombre_usuario, indice, modelo):
+    uso = cargar_uso_ia(nombre_usuario)
+    entrada = (uso.get(str(indice)) or {}).get(modelo)
+    return bool(entrada and entrada.get('fecha') == fecha_hoy_str() and entrada.get('agotada'))
+
+def registrar_uso_clave(nombre_usuario, indice, modelo):
+    uso = cargar_uso_ia(nombre_usuario)
+    clave_uso = uso.setdefault(str(indice), {})
+    entrada = clave_uso.get(modelo) or {}
+    hoy = fecha_hoy_str()
+    if entrada.get('fecha') != hoy:
+        entrada = {'fecha': hoy, 'usados': 0, 'agotada': False}
+    entrada['usados'] = entrada.get('usados', 0) + 1
+    clave_uso[modelo] = entrada
+    guardar_uso_ia(nombre_usuario, uso)
+
+def es_error_limite(excepcion):
+    resp = getattr(excepcion, 'response', None)
+    if resp is None:
+        return False
+    if resp.status_code == 429:
+        return True
+    if resp.status_code == 400:
+        try:
+            cuerpo = resp.text.lower()
+        except Exception:
+            return False
+        return 'resource_exhausted' in cuerpo or 'quota' in cuerpo
+    return False
+
+def gemini_generar_rotando(system_prompt, turnos, imagen_base64=None, nombre_usuario=None, claves_cifradas=None):
+    """Como gemini_generar, pero si la clave activa del usuario tiene el limite
+    diario agotado, prueba automaticamente con la siguiente clave guardada."""
+    if not claves_cifradas:
+        return gemini_generar(system_prompt, turnos, imagen_base64)
+
+    for indice, clave_cifrada in enumerate(claves_cifradas):
+        if clave_marcada_agotada_hoy(nombre_usuario, indice, MODELO_TEXTO):
+            continue
+        try:
+            clave = descifrar(clave_cifrada)
+            respuesta = gemini_generar(system_prompt, turnos, imagen_base64, clave_gemini=clave)
+            registrar_uso_clave(nombre_usuario, indice, MODELO_TEXTO)
+            return respuesta
+        except requests.exceptions.HTTPError as e:
+            if es_error_limite(e):
+                marcar_clave_agotada(nombre_usuario, indice, MODELO_TEXTO)
+                continue
+            raise
+
+    return (
+        'Me temo que todas sus claves de Gemini alcanzaron su limite diario, señor. '
+        'Se restableceran en unas horas, o puede agregar una clave adicional desde el panel de Uso.'
+    )
+
 def usuario_id_actual():
     """Deriva el usuario_id SIEMPRE de la sesion del servidor, nunca de datos
     enviados por el cliente. Evita que un usuario pueda leer/tocar datos de otro
@@ -364,6 +441,17 @@ def usuario_id_actual():
     usuario_invitado = session.get('usuario_invitado')
     if usuario_invitado:
         return f'invitado_{usuario_invitado}'
+    return None
+
+def rol_actual():
+    """Devuelve 'administrador' o 'usuario' segun quien esta logueado.
+    El dueno (david) siempre es administrador."""
+    if session.get('autenticado'):
+        return 'administrador'
+    usuario_invitado = session.get('usuario_invitado')
+    if usuario_invitado:
+        datos_usuario = cargar_usuario(usuario_invitado) or {}
+        return datos_usuario.get('rol', 'usuario')
     return None
 
 @app.before_request
@@ -399,10 +487,70 @@ def registro():
 
     guardar_usuario(nombre, {
         'clave_cuenta_hash': generate_password_hash(clave_cuenta),
-        'clave_gemini_cifrada': cifrar(clave_gemini)
+        'claves_gemini_cifradas': [cifrar(clave_gemini)]
     })
     session.permanent = True
     session['usuario_invitado'] = nombre
+    return jsonify({'ok': True})
+
+@app.route('/api/mis_claves', methods=['GET'])
+def api_mis_claves():
+    nombre = session.get('usuario_invitado')
+    if not nombre:
+        return jsonify({'error': 'no autorizado'}), 403
+    datos_usuario = cargar_usuario(nombre) or {}
+    claves = obtener_claves_gemini(datos_usuario)
+    uso = cargar_uso_ia(nombre)
+    hoy = fecha_hoy_str()
+    resultado = []
+    for i in range(len(claves)):
+        entrada = (uso.get(str(i)) or {}).get(MODELO_TEXTO) or {}
+        vigente = entrada.get('fecha') == hoy
+        resultado.append({
+            'indice': i,
+            'modelo': MODELO_TEXTO,
+            'usados_hoy': entrada.get('usados', 0) if vigente else 0,
+            'agotada_hoy': bool(entrada.get('agotada')) if vigente else False
+        })
+    return jsonify({'claves': resultado})
+
+@app.route('/api/mis_claves', methods=['POST'])
+def api_agregar_clave():
+    nombre = session.get('usuario_invitado')
+    if not nombre:
+        return jsonify({'error': 'no autorizado'}), 403
+    if not limitar(f'agregar_clave:{ip_cliente()}', max_intentos=10, ventana_segundos=600):
+        return jsonify({'error': 'Demasiados intentos, intente mas tarde.'}), 429
+    data = request.get_json()
+    clave_gemini = (data.get('clave_gemini') or '').strip()
+    if not clave_gemini:
+        return jsonify({'error': 'Falta la clave de Gemini.'}), 400
+    if not clave_gemini_funciona(clave_gemini):
+        return jsonify({'error': 'Google rechazo esa clave de Gemini. Verifiquela.'}), 400
+    datos_usuario = cargar_usuario(nombre) or {}
+    claves = obtener_claves_gemini(datos_usuario)
+    if len(claves) >= 5:
+        return jsonify({'error': 'Maximo 5 claves por usuario.'}), 400
+    claves.append(cifrar(clave_gemini))
+    datos_usuario['claves_gemini_cifradas'] = claves
+    datos_usuario.pop('clave_gemini_cifrada', None)
+    guardar_usuario(nombre, datos_usuario)
+    return jsonify({'ok': True})
+
+@app.route('/api/mis_claves/<int:indice>', methods=['DELETE'])
+def api_eliminar_clave(indice):
+    nombre = session.get('usuario_invitado')
+    if not nombre:
+        return jsonify({'error': 'no autorizado'}), 403
+    datos_usuario = cargar_usuario(nombre) or {}
+    claves = obtener_claves_gemini(datos_usuario)
+    if indice < 0 or indice >= len(claves):
+        return jsonify({'error': 'indice invalido'}), 400
+    if len(claves) <= 1:
+        return jsonify({'error': 'Debe conservar al menos una clave.'}), 400
+    claves.pop(indice)
+    datos_usuario['claves_gemini_cifradas'] = claves
+    guardar_usuario(nombre, datos_usuario)
     return jsonify({'ok': True})
 
 @app.route('/entrar', methods=['POST'])
@@ -436,10 +584,85 @@ def login():
 @app.route('/estado_sesion')
 def estado_sesion():
     if session.get('autenticado'):
-        return jsonify({'autenticado': True, 'tipo': 'dueno', 'nombre': 'David'})
+        return jsonify({'autenticado': True, 'tipo': 'dueno', 'nombre': 'David', 'rol': 'administrador'})
     if session.get('usuario_invitado'):
-        return jsonify({'autenticado': True, 'tipo': 'invitado', 'nombre': session.get('usuario_invitado')})
+        nombre_invitado = session.get('usuario_invitado')
+        return jsonify({'autenticado': True, 'tipo': 'invitado', 'nombre': nombre_invitado, 'rol': rol_actual()})
     return jsonify({'autenticado': False})
+
+@app.route('/panel.html')
+def panel_html():
+    if rol_actual() != 'administrador':
+        return redirect('/')
+    return send_from_directory('public', 'panel.html')
+
+@app.route('/programas.html')
+def programas_html():
+    if rol_actual() != 'administrador':
+        return redirect('/')
+    return send_from_directory('public', 'programas.html')
+
+@app.route('/usuarios.html')
+def usuarios_html():
+    if rol_actual() != 'administrador':
+        return redirect('/')
+    return send_from_directory('public', 'usuarios.html')
+
+@app.route('/api/estado_coopmocur')
+def api_estado_coopmocur():
+    if rol_actual() != 'administrador':
+        return jsonify({'error': 'no autorizado'}), 403
+    try:
+        return jsonify(generar_resumen_coopmocur())
+    except Exception as e:
+        print('Error generando estado de COOPMOCUR:', e)
+        return jsonify({'error': 'no se pudo obtener el estado de COOPMOCUR'}), 500
+
+@app.route('/api/usuarios', methods=['GET'])
+def api_listar_usuarios():
+    if rol_actual() != 'administrador':
+        return jsonify({'error': 'no autorizado'}), 403
+    try:
+        usuarios_raw = listar_usuarios()
+        usuarios = [
+            {'usuario': nombre, 'rol': datos.get('rol', 'usuario')}
+            for nombre, datos in usuarios_raw.items()
+        ]
+        usuarios.sort(key=lambda u: u['usuario'])
+        return jsonify({'usuarios': usuarios})
+    except Exception as e:
+        print('Error listando usuarios:', e)
+        return jsonify({'error': 'no se pudo listar usuarios'}), 500
+
+@app.route('/api/usuarios/<nombre>', methods=['PUT'])
+def api_editar_usuario(nombre):
+    if rol_actual() != 'administrador':
+        return jsonify({'error': 'no autorizado'}), 403
+    if not usuario_valido(nombre):
+        return jsonify({'error': 'usuario invalido'}), 400
+    data = request.get_json()
+    nuevo_rol = data.get('rol')
+    if nuevo_rol not in ('administrador', 'usuario'):
+        return jsonify({'error': "rol debe ser 'administrador' o 'usuario'"}), 400
+    datos = cargar_usuario(nombre)
+    if not datos:
+        return jsonify({'error': 'usuario no encontrado'}), 404
+    datos['rol'] = nuevo_rol
+    guardar_usuario(nombre, datos)
+    return jsonify({'ok': True})
+
+@app.route('/api/usuarios/<nombre>', methods=['DELETE'])
+def api_eliminar_usuario(nombre):
+    if rol_actual() != 'administrador':
+        return jsonify({'error': 'no autorizado'}), 403
+    if nombre.lower() == 'david':
+        return jsonify({'error': 'no se puede eliminar al dueno'}), 400
+    try:
+        eliminar_usuario(nombre)
+        return jsonify({'ok': True})
+    except Exception as e:
+        print('Error eliminando usuario:', e)
+        return jsonify({'error': 'no se pudo eliminar'}), 500
 
 @app.route('/logout', methods=['POST'])
 def logout():
@@ -568,11 +791,10 @@ def chat():
         es_dueno = bool(session.get('autenticado'))
         usuario_invitado = session.get('usuario_invitado')
 
-        clave_gemini_invitado = None
+        claves_gemini_invitado = []
         if usuario_invitado:
             datos_usuario = cargar_usuario(usuario_invitado)
-            if datos_usuario:
-                clave_gemini_invitado = descifrar(datos_usuario['clave_gemini_cifrada'])
+            claves_gemini_invitado = obtener_claves_gemini(datos_usuario)
             usuario_id = f'invitado_{usuario_invitado}'
         else:
             usuario_id = 'dueno' if es_dueno else 'anonimo'
@@ -744,12 +966,12 @@ def chat():
                 print('Error leyendo documento:', e)
                 mensaje_usuario = (mensaje_usuario or '') + ' [No se pudo leer el documento adjunto, señor]'
 
-        if not es_dueno and not clave_gemini_invitado:
+        if not es_dueno and not claves_gemini_invitado:
             return jsonify({'error': 'clave_requerida'}), 401
 
         turnos = list(historial_reciente)
         turnos.append({'role': 'user', 'texto': mensaje_usuario or ('Describe esta imagen.' if imagen_base64 else '')})
-        respuesta = gemini_generar(system_prompt, turnos, imagen_base64 if imagen_base64 else None, clave_gemini=clave_gemini_invitado)
+        respuesta = gemini_generar_rotando(system_prompt, turnos, imagen_base64 if imagen_base64 else None, nombre_usuario=usuario_invitado, claves_cifradas=claves_gemini_invitado)
         if not respuesta.strip():
             respuesta = 'Parece que mis circuitos se distrajeron un instante, señor. ¿Podría repetirlo?'
 
@@ -764,7 +986,7 @@ def chat():
                     'destacando lo pendiente o urgente, en tu personaje de Jarvis.'
                 )
             })
-            respuesta = gemini_generar(system_prompt, turnos, clave_gemini=clave_gemini_invitado)
+            respuesta = gemini_generar_rotando(system_prompt, turnos, nombre_usuario=usuario_invitado, claves_cifradas=claves_gemini_invitado)
         elif not es_dueno:
             respuesta = respuesta.replace('[REVISAR_TAREAS]', '').strip()
 
@@ -781,7 +1003,7 @@ def chat():
                     'y concisa, en tu personaje de Jarvis.'
                 )
             })
-            respuesta = gemini_generar(system_prompt, turnos, clave_gemini=clave_gemini_invitado)
+            respuesta = gemini_generar_rotando(system_prompt, turnos, nombre_usuario=usuario_invitado, claves_cifradas=claves_gemini_invitado)
         elif not es_dueno and match_busqueda:
             respuesta = re.sub(r'\[BUSCAR:.*?\]', '', respuesta).strip()
 

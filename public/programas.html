@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Jarvis - Programas</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #05070d; color: #d8f6ff; font-family: 'Courier New', monospace; }
+  body { padding: clamp(14px, 4vw, 24px); }
+  h1 { font-size: clamp(15px, 3vw, 18px); letter-spacing: 3px; margin: 0 0 18px 2px; color: #00e5ff; }
+
+  .card-h { display: flex; align-items: center; gap: 14px; background: linear-gradient(120deg, #0d1220 0%, #070a12 100%); border: 1px solid var(--acento, #00e5ff33); border-radius: 14px; padding: 14px 18px; box-shadow: 0 0 18px -10px var(--acento, #00e5ff55); margin-bottom: 12px; }
+  .card-h .icono { font-size: 26px; flex-shrink: 0; }
+  .card-h .info { flex: 1; min-width: 0; }
+  .card-h h2 { margin: 0 0 2px 0; font-size: 14px; color: var(--acento, #00e5ff); letter-spacing: 1px; }
+  .card-h p.desc { margin: 0; font-size: 11.5px; color: #d8f6ff88; }
+  .card-h .accion { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+  .estado { font-size: 10px; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .estado.sin-vincular { color: #b5bac2; }
+  .estado.vinculado { color: #7ee2a8; }
+  .estado.error { color: #ff8a8a; }
+
+  button { background: var(--acento, #00e5ff); color: #05070d; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 11.5px; font-family: 'Courier New', monospace; font-weight: bold; }
+  button:disabled { background: #2a2e38; color: #d8f6ff88; }
+
+  .resultado { margin-top: 12px; font-size: 12px; background: #05070d99; border-radius: 8px; padding: 10px; display: none; }
+  .resultado.visible { display: block; }
+  .fila { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #ffffff11; }
+  .fila:last-child { border-bottom: none; }
+  .alerta { color: #ff8a8a; }
+
+  .card-nueva { border-style: dashed; opacity: 0.5; justify-content: center; }
+</style>
+</head>
+<body>
+
+<h1>💻 PROGRAMAS</h1>
+
+<div class="card-h" style="--acento:#ffb020;" id="card-coopmocur">
+  <div class="icono">📦</div>
+  <div class="info">
+    <h2>COOPMOCUR</h2>
+    <p class="desc">Sistema de inventario de repuestos</p>
+    <div class="resultado" id="resultado-coopmocur"></div>
+  </div>
+  <div class="accion">
+    <span class="estado sin-vincular" id="estado-coopmocur">Sin vincular</span>
+    <button id="btn-vincular-coopmocur" onclick="vincularCoopmocur()">Vincular</button>
+  </div>
+</div>
+
+<div class="card-h card-nueva">
+  <div class="icono">+</div>
+  <div class="info"><h2 style="color:#00e5ff88;">Agregar software</h2><p class="desc">Próximamente</p></div>
+</div>
+
+<script>
+async function vincularCoopmocur() {
+  const btn = document.getElementById('btn-vincular-coopmocur');
+  const estado = document.getElementById('estado-coopmocur');
+  const resultado = document.getElementById('resultado-coopmocur');
+
+  btn.disabled = true;
+  btn.textContent = 'Vinculando...';
+
+  try {
+    const resp = await fetch('/api/estado_coopmocur');
+    if (!resp.ok) throw new Error('Respuesta no válida del servidor');
+    const data = await resp.json();
+
+    estado.textContent = data.conectado ? 'Vinculado' : 'Sin datos';
+    estado.className = 'estado ' + (data.conectado ? 'vinculado' : 'error');
+
+    let html = '';
+    html += `<div class="fila"><span>Repuestos totales</span><span>${data.inventario.total_repuestos}</span></div>`;
+    html += `<div class="fila"><span>Alertas de stock bajo</span><span class="${data.inventario.cantidad_alertas > 0 ? 'alerta' : ''}">${data.inventario.cantidad_alertas}</span></div>`;
+    html += `<div class="fila"><span>Movimientos en historial</span><span>${data.actividad.total_movimientos_historial}</span></div>`;
+    html += `<div class="fila"><span>Usuarios</span><span>${data.usuarios.total_usuarios}</span></div>`;
+    html += `<div class="fila"><span>Conductores</span><span>${data.conductores.total_conductores}</span></div>`;
+
+    resultado.innerHTML = html;
+    resultado.classList.add('visible');
+    btn.textContent = 'Actualizar';
+  } catch (e) {
+    estado.textContent = 'Error de conexión';
+    estado.className = 'estado error';
+    resultado.innerHTML = `<span class="alerta">${e.message}</span>`;
+    resultado.classList.add('visible');
+    btn.textContent = 'Reintentar';
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+
+</body>
+</html>

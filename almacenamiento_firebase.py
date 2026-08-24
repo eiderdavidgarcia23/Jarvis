@@ -19,6 +19,16 @@ def guardar_usuario(nombre, datos):
     resp = requests.put(_fb_url(f'jarvis_usuarios/{nombre.lower()}'), json=datos, timeout=10)
     resp.raise_for_status()
 
+def listar_usuarios():
+    resp = requests.get(_fb_url('jarvis_usuarios'), timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    return data if data else {}
+
+def eliminar_usuario(nombre):
+    resp = requests.delete(_fb_url(f'jarvis_usuarios/{nombre.lower()}'), timeout=10)
+    resp.raise_for_status()
+
 def cargar_memoria(usuario_id):
     resp = requests.get(_fb_url(f'jarvis_memoria/{id_seguro(usuario_id)}'), timeout=10)
     resp.raise_for_status()
@@ -47,4 +57,14 @@ def cargar_preferencias(usuario_id):
 
 def guardar_preferencias(usuario_id, prefs):
     resp = requests.put(_fb_url(f'jarvis_preferencias/{id_seguro(usuario_id)}'), json=prefs, timeout=10)
+    resp.raise_for_status()
+
+def cargar_uso_ia(nombre):
+    resp = requests.get(_fb_url(f'jarvis_uso_ia/{nombre.lower()}'), timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    return data if data else {}
+
+def guardar_uso_ia(nombre, datos):
+    resp = requests.put(_fb_url(f'jarvis_uso_ia/{nombre.lower()}'), json=datos, timeout=10)
     resp.raise_for_status()
