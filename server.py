@@ -1,5 +1,6 @@
 import os
 import json
+import traceback
 import re
 import requests
 import subprocess
@@ -57,6 +58,15 @@ TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
 GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions'
 MODELO_TEXTO = 'gemini-3.7-flash'
 MODELO_VISION = 'gemini-3.7-flash'
+
+# Modelos que Jarvis prueba en orden por cada clave: primero el de mejor
+# calidad; si Google reporta el limite diario agotado para ese modelo,
+# prueba el siguiente (mas limitado en capacidad pero con cupo diario mucho
+# mayor) antes de pasar a la siguiente clave del usuario.
+MODELOS_DISPONIBLES = [
+    {'id': 'gemini-3.7-flash', 'referencia_aprox': 20},
+    {'id': 'gemini-3.1-flash-lite', 'referencia_aprox': 1000},
+]
 
 MEMORIA_DIR = os.path.join(os.path.dirname(__file__), 'memorias')
 RECORDATORIOS_DIR = os.path.join(os.path.dirname(__file__), 'recordatorios')
@@ -194,7 +204,7 @@ def _bloque_imagen_gemini(imagen_base64):
         return {'type': 'image', 'mime_type': match.group(1), 'data': match.group(2)}
     return {'type': 'image', 'mime_type': 'image/jpeg', 'data': imagen_base64}
 
-def gemini_generar(system_prompt, turnos, imagen_base64=None, clave_gemini=None):
+def gemini_generar(system_prompt, turnos, imagen_base64=None, clave_gemini=None, modelo=None):
     ultimo = turnos[-1]
     previos = turnos[:-1]
 
@@ -210,7 +220,7 @@ def gemini_generar(system_prompt, turnos, imagen_base64=None, clave_gemini=None)
     input_steps.append({'type': 'user_input', 'content': contenido_nuevo})
 
     payload = {
-        'model': MODELO_TEXTO,
+        'model': modelo or MODELO_TEXTO,
         'input': input_steps,
         'system_instruction': system_prompt,
         'generation_config': {'thinking_level': 'low'}
@@ -220,8 +230,10 @@ def gemini_generar(system_prompt, turnos, imagen_base64=None, clave_gemini=None)
         GEMINI_URL,
         headers={'x-goog-api-key': clave_gemini or GEMINI_API_KEY, 'Content-Type': 'application/json'},
         json=payload,
-        timeout=60
+        timeout=35
     )
+    if resp.status_code >= 400:
+        print(f'[gemini_generar] Google respondio {resp.status_code}: {resp.text[:800]}')
     resp.raise_for_status()
     data = resp.json()
 
@@ -353,8 +365,11 @@ def clave_gemini_funciona(clave):
             json={'model': MODELO_TEXTO, 'input': [{'type': 'user_input', 'content': [{'type': 'text', 'text': 'hola'}]}]},
             timeout=20
         )
+        if resp.status_code != 200:
+            print(f'[validacion clave Gemini] Google respondio {resp.status_code}: {resp.text[:300]}')
         return resp.status_code == 200
-    except Exception:
+    except Exception as e:
+        print(f'[validacion clave Gemini] Excepcion: {e}')
         return False
 
 def obtener_claves_gemini(datos_usuario):
@@ -371,26 +386,50 @@ def obtener_claves_gemini(datos_usuario):
 def fecha_hoy_str():
     return datetime.now().strftime('%Y-%m-%d')
 
+def _clave_modelo_segura(modelo):
+    """Firebase Realtime Database no permite '.', '#', '$', '[' ni ']' en
+    ninguna clave del JSON (ni siquiera anidada). Nombres de modelo como
+    'gemini-3.7-flash' rompian el PUT completo con 400. Se sanean aqui,
+    en el unico lugar que arma la clave, para no duplicar la logica."""
+    return re.sub(r'[.#$\[\]]', '_', modelo or '')
+
 def marcar_clave_agotada(nombre_usuario, indice, modelo):
+    modelo_key = _clave_modelo_segura(modelo)
     uso = cargar_uso_ia(nombre_usuario)
-    clave_uso = uso.setdefault(str(indice), {})
-    clave_uso[modelo] = {'fecha': fecha_hoy_str(), 'agotada': True, 'usados': clave_uso.get(modelo, {}).get('usados', 0)}
+    clave_uso = uso.get(str(indice))
+    if not isinstance(clave_uso, dict):
+        clave_uso = {}
+    uso[str(indice)] = clave_uso
+    usados_previos = clave_uso.get(modelo_key, {}).get('usados', 0) if isinstance(clave_uso.get(modelo_key), dict) else 0
+    clave_uso[modelo_key] = {'fecha': fecha_hoy_str(), 'agotada': True, 'usados': usados_previos}
     guardar_uso_ia(nombre_usuario, uso)
 
 def clave_marcada_agotada_hoy(nombre_usuario, indice, modelo):
+    modelo_key = _clave_modelo_segura(modelo)
     uso = cargar_uso_ia(nombre_usuario)
-    entrada = (uso.get(str(indice)) or {}).get(modelo)
-    return bool(entrada and entrada.get('fecha') == fecha_hoy_str() and entrada.get('agotada'))
+    clave_uso = uso.get(str(indice))
+    if not isinstance(clave_uso, dict):
+        return False
+    entrada = clave_uso.get(modelo_key)
+    if not isinstance(entrada, dict):
+        return False
+    return bool(entrada.get('fecha') == fecha_hoy_str() and entrada.get('agotada'))
 
 def registrar_uso_clave(nombre_usuario, indice, modelo):
+    modelo_key = _clave_modelo_segura(modelo)
     uso = cargar_uso_ia(nombre_usuario)
-    clave_uso = uso.setdefault(str(indice), {})
-    entrada = clave_uso.get(modelo) or {}
+    clave_uso = uso.get(str(indice))
+    if not isinstance(clave_uso, dict):
+        clave_uso = {}
+    uso[str(indice)] = clave_uso
+    entrada = clave_uso.get(modelo_key)
+    if not isinstance(entrada, dict):
+        entrada = {}
     hoy = fecha_hoy_str()
     if entrada.get('fecha') != hoy:
         entrada = {'fecha': hoy, 'usados': 0, 'agotada': False}
     entrada['usados'] = entrada.get('usados', 0) + 1
-    clave_uso[modelo] = entrada
+    clave_uso[modelo_key] = entrada
     guardar_uso_ia(nombre_usuario, uso)
 
 def es_error_limite(excepcion):
@@ -398,6 +437,8 @@ def es_error_limite(excepcion):
     if resp is None:
         return False
     if resp.status_code == 429:
+        return True
+    if resp.status_code >= 500:
         return True
     if resp.status_code == 400:
         try:
@@ -407,25 +448,38 @@ def es_error_limite(excepcion):
         return 'resource_exhausted' in cuerpo or 'quota' in cuerpo
     return False
 
-def gemini_generar_rotando(system_prompt, turnos, imagen_base64=None, nombre_usuario=None, claves_cifradas=None):
-    """Como gemini_generar, pero si la clave activa del usuario tiene el limite
-    diario agotado, prueba automaticamente con la siguiente clave guardada."""
+def gemini_generar_rotando(system_prompt, turnos, imagen_base64=None, nombre_usuario=None, claves_cifradas=None, indice_preferido=None):
+    """Prueba en orden los modelos disponibles de cada clave (mejor calidad
+    primero, mas cupo diario despues); si se agotan todos los modelos de una
+    clave, pasa a la siguiente clave guardada del usuario."""
     if not claves_cifradas:
         return gemini_generar(system_prompt, turnos, imagen_base64)
 
-    for indice, clave_cifrada in enumerate(claves_cifradas):
-        if clave_marcada_agotada_hoy(nombre_usuario, indice, MODELO_TEXTO):
-            continue
-        try:
-            clave = descifrar(clave_cifrada)
-            respuesta = gemini_generar(system_prompt, turnos, imagen_base64, clave_gemini=clave)
-            registrar_uso_clave(nombre_usuario, indice, MODELO_TEXTO)
-            return respuesta
-        except requests.exceptions.HTTPError as e:
-            if es_error_limite(e):
-                marcar_clave_agotada(nombre_usuario, indice, MODELO_TEXTO)
+    orden_indices = list(range(len(claves_cifradas)))
+    if isinstance(indice_preferido, int) and 0 <= indice_preferido < len(claves_cifradas):
+        orden_indices = [indice_preferido] + [i for i in orden_indices if i != indice_preferido]
+
+    for indice in orden_indices:
+        clave_cifrada = claves_cifradas[indice]
+        clave = None
+        for modelo_info in MODELOS_DISPONIBLES:
+            modelo = modelo_info['id']
+            if clave_marcada_agotada_hoy(nombre_usuario, indice, modelo):
                 continue
-            raise
+            try:
+                if clave is None:
+                    clave = descifrar(clave_cifrada)
+                respuesta = gemini_generar(system_prompt, turnos, imagen_base64, clave_gemini=clave, modelo=modelo)
+                registrar_uso_clave(nombre_usuario, indice, modelo)
+                return respuesta
+            except requests.exceptions.HTTPError as e:
+                if es_error_limite(e):
+                    marcar_clave_agotada(nombre_usuario, indice, modelo)
+                    continue
+                raise
+            except requests.exceptions.Timeout:
+                print(f'[gemini_generar_rotando] Clave {indice} modelo {modelo} tardo demasiado, probando siguiente.')
+                continue
 
     return (
         'Me temo que todas sus claves de Gemini alcanzaron su limite diario, señor. '
@@ -453,6 +507,13 @@ def rol_actual():
         datos_usuario = cargar_usuario(usuario_invitado) or {}
         return datos_usuario.get('rol', 'usuario')
     return None
+
+def nombre_cuenta_actual():
+    """Nombre bajo el cual se guardan las claves de Gemini del usuario actual:
+    'david' para el dueno, o su nombre de invitado."""
+    if session.get('autenticado'):
+        return 'david'
+    return session.get('usuario_invitado')
 
 @app.before_request
 def requerir_login():
@@ -495,28 +556,59 @@ def registro():
 
 @app.route('/api/mis_claves', methods=['GET'])
 def api_mis_claves():
-    nombre = session.get('usuario_invitado')
+    print('>>> LLEGO PETICION A /api/mis_claves')
+    nombre = nombre_cuenta_actual()
     if not nombre:
         return jsonify({'error': 'no autorizado'}), 403
     datos_usuario = cargar_usuario(nombre) or {}
     claves = obtener_claves_gemini(datos_usuario)
     uso = cargar_uso_ia(nombre)
     hoy = fecha_hoy_str()
+    ahora = datetime.now()
+    manana = (ahora + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    segundos_para_reset = int((manana - ahora).total_seconds())
+
+    preferida = datos_usuario.get('clave_preferida_indice')
+    if not (isinstance(preferida, int) and 0 <= preferida < len(claves)):
+        preferida = None
+    orden_indices = list(range(len(claves)))
+    if preferida is not None:
+        orden_indices = [preferida] + [i for i in orden_indices if i != preferida]
+
+    def esta_agotado(i, modelo):
+        entrada = (uso.get(str(i)) or {}).get(_clave_modelo_segura(modelo)) or {}
+        return bool(entrada.get('agotada')) if entrada.get('fecha') == hoy else False
+
+    activo_actual = None
+    for i in orden_indices:
+        for modelo_info in MODELOS_DISPONIBLES:
+            if not esta_agotado(i, modelo_info['id']):
+                activo_actual = (i, modelo_info['id'])
+                break
+        if activo_actual:
+            break
+
     resultado = []
     for i in range(len(claves)):
-        entrada = (uso.get(str(i)) or {}).get(MODELO_TEXTO) or {}
-        vigente = entrada.get('fecha') == hoy
-        resultado.append({
-            'indice': i,
-            'modelo': MODELO_TEXTO,
-            'usados_hoy': entrada.get('usados', 0) if vigente else 0,
-            'agotada_hoy': bool(entrada.get('agotada')) if vigente else False
-        })
-    return jsonify({'claves': resultado})
+        modelos_resultado = []
+        for modelo_info in MODELOS_DISPONIBLES:
+            modelo = modelo_info['id']
+            entrada = (uso.get(str(i)) or {}).get(_clave_modelo_segura(modelo)) or {}
+            vigente = entrada.get('fecha') == hoy
+            agotada = bool(entrada.get('agotada')) if vigente else False
+            modelos_resultado.append({
+                'id': modelo,
+                'usados_hoy': entrada.get('usados', 0) if vigente else 0,
+                'agotada_hoy': agotada,
+                'activo': activo_actual == (i, modelo),
+                'referencia_aprox': modelo_info['referencia_aprox']
+            })
+        resultado.append({'indice': i, 'preferida': (i == preferida), 'modelos': modelos_resultado})
+    return jsonify({'claves': resultado, 'segundos_para_reset': segundos_para_reset})
 
 @app.route('/api/mis_claves', methods=['POST'])
 def api_agregar_clave():
-    nombre = session.get('usuario_invitado')
+    nombre = nombre_cuenta_actual()
     if not nombre:
         return jsonify({'error': 'no autorizado'}), 403
     if not limitar(f'agregar_clave:{ip_cliente()}', max_intentos=10, ventana_segundos=600):
@@ -537,9 +629,22 @@ def api_agregar_clave():
     guardar_usuario(nombre, datos_usuario)
     return jsonify({'ok': True})
 
+@app.route('/api/mis_claves/<int:indice>/preferir', methods=['POST'])
+def api_preferir_clave(indice):
+    nombre = nombre_cuenta_actual()
+    if not nombre:
+        return jsonify({'error': 'no autorizado'}), 403
+    datos_usuario = cargar_usuario(nombre) or {}
+    claves = obtener_claves_gemini(datos_usuario)
+    if indice < 0 or indice >= len(claves):
+        return jsonify({'error': 'indice invalido'}), 400
+    datos_usuario['clave_preferida_indice'] = indice
+    guardar_usuario(nombre, datos_usuario)
+    return jsonify({'ok': True})
+
 @app.route('/api/mis_claves/<int:indice>', methods=['DELETE'])
 def api_eliminar_clave(indice):
-    nombre = session.get('usuario_invitado')
+    nombre = nombre_cuenta_actual()
     if not nombre:
         return jsonify({'error': 'no autorizado'}), 403
     datos_usuario = cargar_usuario(nombre) or {}
@@ -566,6 +671,9 @@ def entrar():
         if JARVIS_PASSWORD and hmac.compare_digest(clave_cuenta, JARVIS_PASSWORD):
             session.permanent = True
             session['autenticado'] = True
+            if not cargar_usuario('david'):
+                claves_iniciales = [cifrar(GEMINI_API_KEY)] if GEMINI_API_KEY else []
+                guardar_usuario('david', {'claves_gemini_cifradas': claves_iniciales})
             return jsonify({'ok': True})
         return jsonify({'error': 'Usuario o contrasena incorrectos.'}), 400
 
@@ -783,6 +891,7 @@ def recordatorios_pendientes():
 
 @app.route('/chat', methods=['POST'])
 def chat():
+    print('>>> LLEGO PETICION A /chat')
     try:
         if not limitar(f'chat:{ip_cliente()}', max_intentos=30, ventana_segundos=60):
             return jsonify({'error': 'Demasiadas solicitudes, señor. Un momento.'}), 429
@@ -792,9 +901,14 @@ def chat():
         usuario_invitado = session.get('usuario_invitado')
 
         claves_gemini_invitado = []
-        if usuario_invitado:
-            datos_usuario = cargar_usuario(usuario_invitado)
+        indice_preferido = None
+        nombre_cuenta = 'david' if es_dueno else usuario_invitado
+        if nombre_cuenta:
+            datos_usuario = cargar_usuario(nombre_cuenta)
             claves_gemini_invitado = obtener_claves_gemini(datos_usuario)
+            if datos_usuario:
+                indice_preferido = datos_usuario.get('clave_preferida_indice')
+        if usuario_invitado:
             usuario_id = f'invitado_{usuario_invitado}'
         else:
             usuario_id = 'dueno' if es_dueno else 'anonimo'
@@ -971,7 +1085,7 @@ def chat():
 
         turnos = list(historial_reciente)
         turnos.append({'role': 'user', 'texto': mensaje_usuario or ('Describe esta imagen.' if imagen_base64 else '')})
-        respuesta = gemini_generar_rotando(system_prompt, turnos, imagen_base64 if imagen_base64 else None, nombre_usuario=usuario_invitado, claves_cifradas=claves_gemini_invitado)
+        respuesta = gemini_generar_rotando(system_prompt, turnos, imagen_base64 if imagen_base64 else None, nombre_usuario=nombre_cuenta, claves_cifradas=claves_gemini_invitado, indice_preferido=indice_preferido)
         if not respuesta.strip():
             respuesta = 'Parece que mis circuitos se distrajeron un instante, señor. ¿Podría repetirlo?'
 
@@ -986,7 +1100,7 @@ def chat():
                     'destacando lo pendiente o urgente, en tu personaje de Jarvis.'
                 )
             })
-            respuesta = gemini_generar_rotando(system_prompt, turnos, nombre_usuario=usuario_invitado, claves_cifradas=claves_gemini_invitado)
+            respuesta = gemini_generar_rotando(system_prompt, turnos, nombre_usuario=nombre_cuenta, claves_cifradas=claves_gemini_invitado, indice_preferido=indice_preferido)
         elif not es_dueno:
             respuesta = respuesta.replace('[REVISAR_TAREAS]', '').strip()
 
@@ -1003,7 +1117,7 @@ def chat():
                     'y concisa, en tu personaje de Jarvis.'
                 )
             })
-            respuesta = gemini_generar_rotando(system_prompt, turnos, nombre_usuario=usuario_invitado, claves_cifradas=claves_gemini_invitado)
+            respuesta = gemini_generar_rotando(system_prompt, turnos, nombre_usuario=nombre_cuenta, claves_cifradas=claves_gemini_invitado, indice_preferido=indice_preferido)
         elif not es_dueno and match_busqueda:
             respuesta = re.sub(r'\[BUSCAR:.*?\]', '', respuesta).strip()
 
@@ -1033,7 +1147,8 @@ def chat():
             return jsonify({'respuesta': 'Un momento, señor. Incluso yo tengo mis limites, al parecer.'})
         return jsonify({'error': 'Error al conectar con Jarvis'}), 500
     except Exception as e:
-        print(e)
+        print('ERROR en /chat:', e)
+        traceback.print_exc()
         return jsonify({'respuesta': 'Algo ha fallado de mi lado, señor. Nada que no pueda resolverse, aunque preferiría que no volviera a ocurrir.'}), 500
 
 import logging

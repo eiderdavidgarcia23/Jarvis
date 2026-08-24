@@ -63,7 +63,11 @@ def cargar_uso_ia(nombre):
     resp = requests.get(_fb_url(f'jarvis_uso_ia/{nombre.lower()}'), timeout=10)
     resp.raise_for_status()
     data = resp.json()
-    return data if data else {}
+    if not data:
+        return {}
+    if isinstance(data, list):
+        return {str(i): v for i, v in enumerate(data) if v is not None}
+    return data
 
 def guardar_uso_ia(nombre, datos):
     resp = requests.put(_fb_url(f'jarvis_uso_ia/{nombre.lower()}'), json=datos, timeout=10)
