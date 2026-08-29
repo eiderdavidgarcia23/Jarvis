@@ -1,0 +1,4 @@
+nohup: ignoring input
+Jarvis corriendo en http://localhost:3000
+ * Serving Flask app 'server'
+ * Debug mode: off
