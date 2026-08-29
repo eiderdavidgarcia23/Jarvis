@@ -124,7 +124,7 @@
   }
   .btnPanel:active { opacity: 0.75; }
   .btnPanel.secundario { background: transparent; color: #ff8080; border: 1px solid #ff505055; }
-  .filaBtns { display: flex; gap: 8px; }
+  .filaBtns { display: flex; gap: 8px; flex-wrap: wrap; }
   .usoBarraFondo { background: #05070d; border: 1px solid #00e5ff33; border-radius: 6px; height: 8px; overflow: hidden; margin-top: 6px; }
   .usoBarraRelleno { background: #00e5ff; height: 100%; width: 0%; transition: width 0.3s ease; }
 
@@ -140,7 +140,9 @@
 <header>
   J.A.R.V.I.S.
   <button id="btnAjustes" title="Ajustes">&#9881;</button>
-</header><div id="orbContainer">
+</header>
+
+<div id="orbContainer">
   <canvas id="orbCanvas"></canvas>
   <div id="estado">En reposo</div>
 </div>
@@ -175,22 +177,48 @@
     <div id="contenidoAjustes">
 
       <div class="vistaAjuste activo" id="tabLlave">
-        <h3>Llave de Gemini</h3>
+        <h3>Proveedor de IA</h3>
+        <p style="font-size:11px; opacity:0.7; margin-top:-6px;">Guarda tus llaves y elige cual usa Jarvis. Cuando una se agote, cambia a la otra con un toque.</p>
+
         <div class="card">
           <div class="cardHead">
             <strong>Google Gemini</strong>
-            <span class="badge" id="badgeLlave">Sin conectar</span>
+            <span class="badge" id="badgeLlaveGemini">Sin conectar</span>
           </div>
-          <input type="password" id="campoLlave" class="campoTexto" placeholder="Pega tu llave de Gemini (AQ...)">
+          <input type="password" id="campoLlaveGemini" class="campoTexto" placeholder="Pega tu llave de Gemini (AQ...)">
           <p style="font-size:11px; opacity:0.7; margin:0 0 10px;">¿No tienes una?</p>
-          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55; text-decoration:none; display:inline-block; margin-bottom:16px;">Obtener llave en AI Studio &rarr;</a>
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55; text-decoration:none; display:inline-block; margin-bottom:12px;">Obtener llave en AI Studio &rarr;</a>
           <div class="filaBtns">
-            <button id="btnGuardarLlave" class="btnPanel">Guardar</button>
-            <button id="btnVerLlave" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55;">Ver</button>
-            <button id="btnBorrarLlave" class="btnPanel secundario">Borrar</button>
+            <button id="btnGuardarLlaveGemini" class="btnPanel">Guardar</button>
+            <button id="btnVerLlaveGemini" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55;">Ver</button>
+            <button id="btnBorrarLlaveGemini" class="btnPanel secundario">Borrar</button>
+          </div>
+          <div class="filaBtns" style="margin-top:10px;">
+            <button id="btnUsarGemini" class="btnPanel secundario" style="color:#35e07a; border-color:#35e07a55;">Usar esta</button>
+            <span class="badge" id="badgeProveedorGemini">Inactiva</span>
           </div>
         </div>
-        <p style="font-size:11px; opacity:0.7;">Se guarda solo en este navegador. Por ahora es informativo — todavía no está conectada al servidor (eso lo hacemos en el próximo paso).</p>
+
+        <div class="card">
+          <div class="cardHead">
+            <strong>Groq</strong>
+            <span class="badge" id="badgeLlaveGroq">Sin conectar</span>
+          </div>
+          <input type="password" id="campoLlaveGroq" class="campoTexto" placeholder="Pega tu llave de Groq (gsk_...)">
+          <p style="font-size:11px; opacity:0.7; margin:0 0 10px;">¿No tienes una?</p>
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55; text-decoration:none; display:inline-block; margin-bottom:12px;">Obtener llave en Groq Console &rarr;</a>
+          <div class="filaBtns">
+            <button id="btnGuardarLlaveGroq" class="btnPanel">Guardar</button>
+            <button id="btnVerLlaveGroq" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55;">Ver</button>
+            <button id="btnBorrarLlaveGroq" class="btnPanel secundario">Borrar</button>
+          </div>
+          <div class="filaBtns" style="margin-top:10px;">
+            <button id="btnUsarGroq" class="btnPanel secundario" style="color:#35e07a; border-color:#35e07a55;">Usar esta</button>
+            <span class="badge" id="badgeProveedorGroq">Inactiva</span>
+          </div>
+        </div>
+
+        <p style="font-size:11px; opacity:0.7;">Las llaves se guardan solo en este navegador y se envian al servidor con cada mensaje. Si no guardas una llave aqui, Jarvis usa la que tenga configurada en el archivo .env del servidor.</p>
       </div>
 
       <div class="vistaAjuste" id="tabVoz">
@@ -212,20 +240,18 @@
       <div class="vistaAjuste" id="tabAcerca">
         <h3>Acerca de J.A.R.V.I.S.</h3>
         <div class="card">
-          <p style="margin:0;">Asistente personal construido por David. Gemini + Piper TTS.</p>
+          <p style="margin:0;">Asistente personal construido por David. Gemini + Groq + Piper TTS.</p>
         </div>
       </div>
 
     </div>
   </div>
 </div>
-
 <script>
 const canvas = document.getElementById('orbCanvas');
 const ctx = canvas.getContext('2d');
 let estadoActual = 'reposo';
 const estadoLabel = document.getElementById('estado');
-
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
   canvas.width = rect.width * devicePixelRatio;
@@ -312,39 +338,87 @@ function actualizarUsoUI() {
 }
 actualizarUsoUI();
 
-/* --- Llave de Gemini (guardado local) --- */
-const campoLlave = document.getElementById('campoLlave');
-const badgeLlave = document.getElementById('badgeLlave');
-const btnGuardarLlave = document.getElementById('btnGuardarLlave');
-const btnVerLlave = document.getElementById('btnVerLlave');
-const btnBorrarLlave = document.getElementById('btnBorrarLlave');
+/* --- Llaves de IA (guardado local) --- */
+const campoLlaveGemini = document.getElementById('campoLlaveGemini');
+const badgeLlaveGemini = document.getElementById('badgeLlaveGemini');
+const btnGuardarLlaveGemini = document.getElementById('btnGuardarLlaveGemini');
+const btnVerLlaveGemini = document.getElementById('btnVerLlaveGemini');
+const btnBorrarLlaveGemini = document.getElementById('btnBorrarLlaveGemini');
 
-function actualizarBadgeLlave() {
-  const llave = localStorage.getItem('jarvisGeminiKey');
+const campoLlaveGroq = document.getElementById('campoLlaveGroq');
+const badgeLlaveGroq = document.getElementById('badgeLlaveGroq');
+const btnGuardarLlaveGroq = document.getElementById('btnGuardarLlaveGroq');
+const btnVerLlaveGroq = document.getElementById('btnVerLlaveGroq');
+const btnBorrarLlaveGroq = document.getElementById('btnBorrarLlaveGroq');
+
+const btnUsarGemini = document.getElementById('btnUsarGemini');
+const btnUsarGroq = document.getElementById('btnUsarGroq');
+const badgeProveedorGemini = document.getElementById('badgeProveedorGemini');
+const badgeProveedorGroq = document.getElementById('badgeProveedorGroq');
+
+function actualizarBadgeLlave(campo, badge, storageKey) {
+  const llave = localStorage.getItem(storageKey);
   if (llave) {
-    badgeLlave.textContent = 'Conectada';
-    badgeLlave.classList.add('on');
-    campoLlave.value = llave;
+    badge.textContent = 'Conectada';
+    badge.classList.add('on');
+    campo.value = llave;
   } else {
-    badgeLlave.textContent = 'Sin conectar';
-    badgeLlave.classList.remove('on');
-    campoLlave.value = '';
+    badge.textContent = 'Sin conectar';
+    badge.classList.remove('on');
+    campo.value = '';
   }
 }
-actualizarBadgeLlave();
+function actualizarBadgesLlaves() {
+  actualizarBadgeLlave(campoLlaveGemini, badgeLlaveGemini, 'jarvisGeminiKey');
+  actualizarBadgeLlave(campoLlaveGroq, badgeLlaveGroq, 'jarvisGroqKey');
+}
+actualizarBadgesLlaves();
 
-btnGuardarLlave.addEventListener('click', () => {
-  const valor = campoLlave.value.trim();
+function actualizarProveedorUI() {
+  const activo = localStorage.getItem('jarvisProveedor') || 'gemini';
+  const esGemini = activo === 'gemini';
+  badgeProveedorGemini.textContent = esGemini ? 'EN USO' : 'Inactiva';
+  badgeProveedorGemini.classList.toggle('on', esGemini);
+  badgeProveedorGroq.textContent = !esGemini ? 'EN USO' : 'Inactiva';
+  badgeProveedorGroq.classList.toggle('on', !esGemini);
+}
+actualizarProveedorUI();
+
+btnGuardarLlaveGemini.addEventListener('click', () => {
+  const valor = campoLlaveGemini.value.trim();
   if (!valor) return;
   localStorage.setItem('jarvisGeminiKey', valor);
-  actualizarBadgeLlave();
+  actualizarBadgesLlaves();
 });
-btnBorrarLlave.addEventListener('click', () => {
+btnBorrarLlaveGemini.addEventListener('click', () => {
   localStorage.removeItem('jarvisGeminiKey');
-  actualizarBadgeLlave();
+  actualizarBadgesLlaves();
 });
-btnVerLlave.addEventListener('click', () => {
-  campoLlave.type = campoLlave.type === 'password' ? 'text' : 'password';
+btnVerLlaveGemini.addEventListener('click', () => {
+  campoLlaveGemini.type = campoLlaveGemini.type === 'password' ? 'text' : 'password';
+});
+
+btnGuardarLlaveGroq.addEventListener('click', () => {
+  const valor = campoLlaveGroq.value.trim();
+  if (!valor) return;
+  localStorage.setItem('jarvisGroqKey', valor);
+  actualizarBadgesLlaves();
+});
+btnBorrarLlaveGroq.addEventListener('click', () => {
+  localStorage.removeItem('jarvisGroqKey');
+  actualizarBadgesLlaves();
+});
+btnVerLlaveGroq.addEventListener('click', () => {
+  campoLlaveGroq.type = campoLlaveGroq.type === 'password' ? 'text' : 'password';
+});
+
+btnUsarGemini.addEventListener('click', () => {
+  localStorage.setItem('jarvisProveedor', 'gemini');
+  actualizarProveedorUI();
+});
+btnUsarGroq.addEventListener('click', () => {
+  localStorage.setItem('jarvisProveedor', 'groq');
+  actualizarProveedorUI();
 });
 
 const audioPlayer = new Audio();
@@ -381,10 +455,19 @@ async function enviarMensaje() {
 
   const ultimoMsg = agregarMensaje('...', 'jarvis');
 
+  const proveedor = localStorage.getItem('jarvisProveedor') || 'gemini';
+  const llaveGemini = localStorage.getItem('jarvisGeminiKey') || '';
+  const llaveGroq = localStorage.getItem('jarvisGroqKey') || '';
+
   try {
     const res = await fetch('/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Proveedor': proveedor,
+        'X-Gemini-Key': llaveGemini,
+        'X-Groq-Key': llaveGroq
+      },
       body: JSON.stringify({ mensaje, zona_horaria: zonaHoraria })
     });
     const data = await res.json();
@@ -427,7 +510,7 @@ if (SpeechRecognition) {
 
 // --- Panel de Ajustes ---
 const overlayAjustes = document.getElementById('overlayAjustes');
-document.getElementById('btnAjustes').addEventListener('click', () => { overlayAjustes.classList.add('abierto'); actualizarUsoUI(); actualizarBadgeLlave(); });
+document.getElementById('btnAjustes').addEventListener('click', () => { overlayAjustes.classList.add('abierto'); actualizarUsoUI(); actualizarBadgesLlaves(); actualizarProveedorUI(); });
 document.getElementById('btnCerrarPanel').addEventListener('click', () => overlayAjustes.classList.remove('abierto'));
 overlayAjustes.addEventListener('click', (e) => { if (e.target === overlayAjustes) overlayAjustes.classList.remove('abierto'); });
 
@@ -440,7 +523,6 @@ document.querySelectorAll('.tabAjuste').forEach(btn => {
   });
 });
 </script>
-
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
