@@ -61,21 +61,23 @@
   #overlayAjustes {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 50;
     backdrop-filter: blur(2px);
+    align-items: center; justify-content: center; padding: 20px;
   }
-  #overlayAjustes.abierto { display: block; }
+  #overlayAjustes.abierto { display: flex; }
   #panelAjustes {
-    position: fixed; top: 0; right: 0; height: 100%; width: min(90vw, 380px);
+    position: relative; width: min(92vw, 420px); max-height: 85vh;
     background: linear-gradient(180deg, #0b101a 0%, #070a11 100%);
-    border-left: 1px solid #00e5ff33;
-    box-shadow: -12px 0 40px rgba(0,0,0,0.55);
+    border: 1px solid #00e5ff33; border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
     z-index: 51;
     display: flex; flex-direction: column;
-    transform: translateX(100%); transition: transform 0.28s ease;
+    transform: scale(0.94); opacity: 0; transition: transform 0.2s ease, opacity 0.2s ease;
   }
-  #overlayAjustes.abierto #panelAjustes { transform: translateX(0); }
+  #overlayAjustes.abierto #panelAjustes { transform: scale(1); opacity: 1; }
   #panelHeader {
     display: flex; align-items: center; justify-content: space-between;
     padding: 18px 18px 14px; border-bottom: 1px solid #00e5ff22; flex-shrink: 0;
+    border-radius: 16px 16px 0 0;
   }
   #panelHeader span { font-size: 15px; letter-spacing: 3px; font-weight: bold; }
   #btnCerrarPanel {
@@ -93,7 +95,7 @@
     white-space: nowrap;
   }
   .tabAjuste.activo { color: #05070d; background: #00e5ff; font-weight: bold; }
-  #contenidoAjustes { flex: 1; overflow-y: auto; padding: 18px; font-size: 13px; line-height: 1.6; }
+  #contenidoAjustes { flex: 1; min-height: 0; overflow-y: auto; padding: 18px; font-size: 13px; line-height: 1.6; }
   .vistaAjuste { display: none; }
   .vistaAjuste.activo { display: block; }
   .vistaAjuste h3 { font-size: 13px; letter-spacing: 1.5px; margin: 0 0 10px; color: #00e5ff; text-transform: uppercase; }
@@ -180,6 +182,7 @@
             <span class="badge" id="badgeLlave">Sin conectar</span>
           </div>
           <input type="password" id="campoLlave" class="campoTexto" placeholder="Pega tu llave de Gemini (AQ...)">
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="display:inline-block; font-size:11px; color:#00e5ff; text-decoration:none; margin-bottom:10px;">¿No tienes una? Crear llave gratis en Google AI Studio &rarr;</a>
           <div class="filaBtns">
             <button id="btnGuardarLlave" class="btnPanel">Guardar</button>
             <button id="btnVerLlave" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55;">Ver</button>
