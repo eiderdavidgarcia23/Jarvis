@@ -1,0 +1,10 @@
+[
+  {
+    "role": "user",
+    "texto": "Hola"
+  },
+  {
+    "role": "assistant",
+    "texto": "Buenos días, señor. Sistemas en línea y a su completa disposición. ¿En qué puedo asistirle hoy?"
+  }
+]

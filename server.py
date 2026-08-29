@@ -7,6 +7,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 from flask import Flask, request, jsonify, send_from_directory, Response
 
 from comandos_dispositivo import encender_linterna, apagar_linterna, vibrar, estado_bateria
@@ -16,8 +19,37 @@ app = Flask(__name__, static_folder='public', static_url_path='')
 # --- Modelo local (llama-server corriendo en el mismo Termux) ---
 MODELO_LOCAL_URL = os.environ.get('MODELO_LOCAL_URL', 'http://localhost:8081/v1/chat/completions')
 
+# --- Gemini (API en la nube) ---
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.7-flash')
+GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
+
 # --- Memoria simple, un solo usuario (vos), archivo local ---
 MEMORIA_PATH = os.path.join(os.path.dirname(__file__), 'memoria_local.json')
+
+MEMORIA_PERSISTENTE_PATH = os.path.join(os.path.dirname(__file__), 'memoria_persistente.json')
+
+def cargar_memoria_persistente():
+    if not os.path.exists(MEMORIA_PERSISTENTE_PATH):
+        return []
+    with open(MEMORIA_PERSISTENTE_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def guardar_memoria_persistente(datos):
+    with open(MEMORIA_PERSISTENTE_PATH, 'w', encoding='utf-8') as f:
+        json.dump(datos, f, ensure_ascii=False, indent=2)
+
+def agregar_recuerdo(texto):
+    datos = cargar_memoria_persistente()
+    if texto not in datos:
+        datos.append(texto)
+        guardar_memoria_persistente(datos)
+
+def procesar_recuerdos(respuesta):
+    def _guardar(m):
+        agregar_recuerdo(m.group(1).strip())
+        return ''
+    return re.sub(r'\[RECORDAR:\s*(.*?)\]', _guardar, respuesta).strip()
 
 def cargar_memoria():
     if not os.path.exists(MEMORIA_PATH):
@@ -62,6 +94,26 @@ def generar_audio(texto):
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
 
+def generar_gemini(system_prompt, turnos):
+    contenidos = []
+    for h in turnos:
+        rol = 'user' if h['role'] == 'user' else 'model'
+        contenidos.append({'role': rol, 'parts': [{'text': h['texto']}]})
+
+    resp = requests.post(
+        GEMINI_URL,
+        params={'key': GEMINI_API_KEY},
+        json={
+            'system_instruction': {'parts': [{'text': system_prompt}]},
+            'contents': contenidos,
+            'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 500}
+        },
+        timeout=60
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data['candidates'][0]['content']['parts'][0]['text'].strip()
+
 # --- El cerebro: llama al modelo local en vez de Gemini ---
 def generar_local(system_prompt, turnos):
     mensajes = [{'role': 'system', 'content': system_prompt}]
@@ -94,7 +146,11 @@ SYSTEM_PROMPT_BASE = (
     'Cuando el usuario pregunte por la bateria del celular, agrega exactamente: '
     '[CONSULTAR_BATERIA], y en tu respuesta hablada di que estas revisando, sin '
     'inventar el porcentaje - se te va a dar el dato real despues. '
-    'Nunca menciones estas etiquetas de forma literal en tu respuesta hablada.'
+    'Nunca menciones estas etiquetas de forma literal en tu respuesta hablada. '
+    'Cuando en la charla surja algo importante para recordar siempre (nombre, '
+    'proyectos, preferencias, datos personales del usuario), agrega en una linea '
+    'aparte exactamente: [RECORDAR: el dato en una frase corta]. Usalo solo para '
+    'datos que valga la pena recordar para siempre, no para cada mensaje.'
 )
 
 def ejecutar_acciones_dispositivo(respuesta):
@@ -143,12 +199,17 @@ def chat():
             ahora = datetime.now()
         fecha_hora_str = ahora.strftime('%A %d de %B de %Y, %H:%M')
 
-        system_prompt = SYSTEM_PROMPT_BASE + f' La fecha y hora ACTUAL es: {fecha_hora_str}.'
+        recuerdos = cargar_memoria_persistente()
+        texto_recuerdos = ''
+        if recuerdos:
+            texto_recuerdos = ' Datos importantes que ya sabes del usuario: ' + '; '.join(recuerdos) + '.'
+
+        system_prompt = SYSTEM_PROMPT_BASE + f' La fecha y hora ACTUAL es: {fecha_hora_str}.' + texto_recuerdos
 
         turnos = list(historial[-20:])  # ultimos turnos, para no saturar el contexto del modelo chico
         turnos.append({'role': 'user', 'texto': mensaje_usuario})
 
-        respuesta = generar_local(system_prompt, turnos)
+        respuesta = generar_gemini(system_prompt, turnos)
         if not respuesta.strip():
             respuesta = 'Parece que mis circuitos se distrajeron un instante, señor. ¿Podría repetirlo?'
 
@@ -162,6 +223,7 @@ def chat():
                 respuesta += ' No pude leer la bateria en este momento, señor.'
 
         respuesta = ejecutar_acciones_dispositivo(respuesta)
+        respuesta = procesar_recuerdos(respuesta)
 
         historial.append({'role': 'user', 'texto': mensaje_usuario})
         historial.append({'role': 'assistant', 'texto': respuesta})
@@ -169,7 +231,7 @@ def chat():
 
         return jsonify({'respuesta': respuesta})
     except requests.exceptions.ConnectionError:
-        return jsonify({'respuesta': 'No logro conectarme con mi propio cerebro local, señor. ¿Esta corriendo el servidor del modelo?'}), 500
+        return jsonify({'respuesta': 'No logro conectarme con Gemini en este momento, señor. Verifique la conexion a internet o la clave de API.'}), 500
     except Exception as e:
         print('ERROR en /chat:', e)
         return jsonify({'respuesta': 'Algo ha fallado de mi lado, señor.'}), 500
