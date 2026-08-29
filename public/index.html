@@ -87,6 +87,8 @@
   .vistaAjuste.activo { display: block; }
   .vistaAjuste h3 { font-size: 13px; letter-spacing: 1px; margin: 0 0 8px; color: #00e5ff; }
   .vistaAjuste p { color: #b0e6f0; margin: 0 0 12px; }
+  .usoBarraFondo { background: #10151f; border: 1px solid #00e5ff33; border-radius: 6px; height: 8px; overflow: hidden; margin-top: 6px; }
+  .usoBarraRelleno { background: #00e5ff; height: 100%; width: 0%; transition: width 0.3s ease; }
 
   @media (min-width: 900px) {
     #orbCanvas { width: min(35vw, 50vh); height: min(35vw, 50vh); }
@@ -139,8 +141,10 @@
         <p>Actualmente usando Piper (español, procesado en el servidor). Próximamente: elegir entre voces.</p>
       </div>
       <div class="vistaAjuste" id="tabUso">
-        <h3>Uso de la API</h3>
-        <p>Próximamente: contador de tokens usados hoy.</p>
+        <h3>Uso de hoy</h3>
+        <p>Mensajes enviados hoy: <span id="usoHoy">0</span> de <span id="usoMeta">100</span></p>
+        <div class="usoBarraFondo"><div class="usoBarraRelleno" id="usoBarra"></div></div>
+        <p style="margin-top:12px; font-size:11px; opacity:0.7;">Se cuenta en este dispositivo y se reinicia cada día. Próximamente: uso real de la API por llave.</p>
       </div>
       <div class="vistaAjuste" id="tabAcerca">
         <h3>Acerca de J.A.R.V.I.S.</h3>
@@ -218,6 +222,30 @@ function agregarMensaje(txt, clase) {
   return div;
 }
 
+/* --- Contador de Uso (local, por dia) --- */
+const USO_META_DIARIA = 100;
+function obtenerUsoHoy() {
+  const hoy = new Date().toISOString().slice(0, 10);
+  let datos = {};
+  try { datos = JSON.parse(localStorage.getItem('jarvisUso') || '{}'); } catch (e) {}
+  if (datos.fecha !== hoy) { datos = { fecha: hoy, contador: 0 }; }
+  return datos;
+}
+function incrementarUso() {
+  const datos = obtenerUsoHoy();
+  datos.contador += 1;
+  localStorage.setItem('jarvisUso', JSON.stringify(datos));
+  actualizarUsoUI();
+}
+function actualizarUsoUI() {
+  const datos = obtenerUsoHoy();
+  const elHoy = document.getElementById('usoHoy');
+  const elBarra = document.getElementById('usoBarra');
+  if (elHoy) elHoy.textContent = datos.contador;
+  if (elBarra) elBarra.style.width = Math.min(100, (datos.contador / USO_META_DIARIA) * 100) + '%';
+}
+actualizarUsoUI();
+
 const audioPlayer = new Audio();
 audioPlayer.addEventListener('play', () => setEstado('hablando', 'Hablando'));
 audioPlayer.addEventListener('ended', () => setEstado('reposo', 'En reposo'));
@@ -265,6 +293,7 @@ async function enviarMensaje() {
       setEstado('reposo', 'En reposo');
       return;
     }
+    incrementarUso();
     const { textoLimpio, urls } = procesarAcciones(data.respuesta || '');
     agregarMensaje(textoLimpio, 'jarvis');
     hablar(textoLimpio);
@@ -297,7 +326,7 @@ if (SpeechRecognition) {
 
 // --- Panel de Ajustes ---
 const overlayAjustes = document.getElementById('overlayAjustes');
-document.getElementById('btnAjustes').addEventListener('click', () => overlayAjustes.classList.add('abierto'));
+document.getElementById('btnAjustes').addEventListener('click', () => { overlayAjustes.classList.add('abierto'); actualizarUsoUI(); });
 document.getElementById('btnCerrarPanel').addEventListener('click', () => overlayAjustes.classList.remove('abierto'));
 overlayAjustes.addEventListener('click', (e) => { if (e.target === overlayAjustes) overlayAjustes.classList.remove('abierto'); });
 
