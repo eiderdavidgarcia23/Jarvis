@@ -57,37 +57,73 @@
   }
   #btnEnviar:active { opacity: 0.7; }
 
-  /* --- Panel de Ajustes --- */
+  /* --- Panel de Ajustes (rediseño) --- */
   #overlayAjustes {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 50;
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 50;
+    backdrop-filter: blur(2px);
   }
   #overlayAjustes.abierto { display: block; }
   #panelAjustes {
-    position: fixed; top: 0; right: 0; height: 100%; width: min(85vw, 340px);
-    background: #0a0e17; border-left: 1px solid #00e5ff33; z-index: 51;
+    position: fixed; top: 0; right: 0; height: 100%; width: min(90vw, 380px);
+    background: linear-gradient(180deg, #0b101a 0%, #070a11 100%);
+    border-left: 1px solid #00e5ff33;
+    box-shadow: -12px 0 40px rgba(0,0,0,0.55);
+    z-index: 51;
     display: flex; flex-direction: column;
-    transform: translateX(100%); transition: transform 0.25s ease;
+    transform: translateX(100%); transition: transform 0.28s ease;
   }
   #overlayAjustes.abierto #panelAjustes { transform: translateX(0); }
   #panelHeader {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px; border-bottom: 1px solid #00e5ff33; flex-shrink: 0;
+    padding: 18px 18px 14px; border-bottom: 1px solid #00e5ff22; flex-shrink: 0;
   }
-  #panelHeader span { font-size: 15px; letter-spacing: 2px; }
-  #btnCerrarPanel { background: none; border: none; color: #00e5ff; font-size: 22px; padding: 0 6px; }
-  #tabsAjustes { display: flex; border-bottom: 1px solid #00e5ff33; flex-shrink: 0; }
+  #panelHeader span { font-size: 15px; letter-spacing: 3px; font-weight: bold; }
+  #btnCerrarPanel {
+    background: #10151f; border: 1px solid #00e5ff33; color: #00e5ff; font-size: 18px;
+    width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  #tabsAjustes {
+    display: flex; gap: 6px; padding: 10px 14px; flex-shrink: 0;
+    overflow-x: auto; border-bottom: 1px solid #00e5ff22;
+  }
   .tabAjuste {
-    flex: 1; padding: 10px 4px; background: none; border: none; color: #00e5ff88;
+    flex: 0 0 auto; padding: 8px 14px; background: transparent; border: 1px solid transparent;
+    border-radius: 20px; color: #6fb8c7;
     font-family: inherit; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
-    border-bottom: 2px solid transparent;
+    white-space: nowrap;
   }
-  .tabAjuste.activo { color: #00e5ff; border-bottom-color: #00e5ff; }
-  #contenidoAjustes { flex: 1; overflow-y: auto; padding: 16px; font-size: 13px; line-height: 1.6; }
+  .tabAjuste.activo { color: #05070d; background: #00e5ff; font-weight: bold; }
+  #contenidoAjustes { flex: 1; overflow-y: auto; padding: 18px; font-size: 13px; line-height: 1.6; }
   .vistaAjuste { display: none; }
   .vistaAjuste.activo { display: block; }
-  .vistaAjuste h3 { font-size: 13px; letter-spacing: 1px; margin: 0 0 8px; color: #00e5ff; }
-  .vistaAjuste p { color: #b0e6f0; margin: 0 0 12px; }
-  .usoBarraFondo { background: #10151f; border: 1px solid #00e5ff33; border-radius: 6px; height: 8px; overflow: hidden; margin-top: 6px; }
+  .vistaAjuste h3 { font-size: 13px; letter-spacing: 1.5px; margin: 0 0 10px; color: #00e5ff; text-transform: uppercase; }
+  .vistaAjuste p { color: #a9d8e2; margin: 0 0 12px; }
+  .card {
+    background: #10151f; border: 1px solid #00e5ff22; border-radius: 12px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .cardHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .cardHead strong { font-size: 13px; letter-spacing: 0.5px; color: #eafcff; }
+  .badge {
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 9px;
+    border-radius: 20px; border: 1px solid #00e5ff33; color: #00e5ff88;
+  }
+  .badge.on { color: #05070d; background: #35e07a; border-color: #35e07a; }
+  .campoTexto {
+    width: 100%; background: #05070d; border: 1px solid #00e5ff33; border-radius: 8px;
+    color: #eafcff; padding: 10px 12px; font-family: inherit; font-size: 13px; outline: none;
+    margin-bottom: 10px;
+  }
+  .campoTexto::placeholder { color: #4a6a72; }
+  .btnPanel {
+    background: #00e5ff; color: #05070d; border: none; border-radius: 8px;
+    padding: 10px 14px; font-family: inherit; font-size: 12px; font-weight: bold;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .btnPanel:active { opacity: 0.75; }
+  .btnPanel.secundario { background: transparent; color: #ff8080; border: 1px solid #ff505055; }
+  .filaBtns { display: flex; gap: 8px; }
+  .usoBarraFondo { background: #05070d; border: 1px solid #00e5ff33; border-radius: 6px; height: 8px; overflow: hidden; margin-top: 6px; }
   .usoBarraRelleno { background: #00e5ff; height: 100%; width: 0%; transition: width 0.3s ease; }
 
   @media (min-width: 900px) {
@@ -102,9 +138,7 @@
 <header>
   J.A.R.V.I.S.
   <button id="btnAjustes" title="Ajustes">&#9881;</button>
-</header>
-
-<div id="orbContainer">
+</header><div id="orbContainer">
   <canvas id="orbCanvas"></canvas>
   <div id="estado">En reposo</div>
 </div>
@@ -131,25 +165,53 @@
       <button id="btnCerrarPanel">&times;</button>
     </div>
     <div id="tabsAjustes">
-      <button class="tabAjuste activo" data-tab="voz">Voz</button>
+      <button class="tabAjuste activo" data-tab="llave">Llave IA</button>
+      <button class="tabAjuste" data-tab="voz">Voz</button>
       <button class="tabAjuste" data-tab="uso">Uso</button>
       <button class="tabAjuste" data-tab="acerca">Acerca de</button>
     </div>
     <div id="contenidoAjustes">
-      <div class="vistaAjuste activo" id="tabVoz">
-        <h3>Voz de Jarvis</h3>
-        <p>Actualmente usando Piper (español, procesado en el servidor). Próximamente: elegir entre voces.</p>
+
+      <div class="vistaAjuste activo" id="tabLlave">
+        <h3>Llave de Gemini</h3>
+        <div class="card">
+          <div class="cardHead">
+            <strong>Google Gemini</strong>
+            <span class="badge" id="badgeLlave">Sin conectar</span>
+          </div>
+          <input type="password" id="campoLlave" class="campoTexto" placeholder="Pega tu llave de Gemini (AQ...)">
+          <div class="filaBtns">
+            <button id="btnGuardarLlave" class="btnPanel">Guardar</button>
+            <button id="btnVerLlave" class="btnPanel secundario" style="color:#00e5ff; border-color:#00e5ff55;">Ver</button>
+            <button id="btnBorrarLlave" class="btnPanel secundario">Borrar</button>
+          </div>
+        </div>
+        <p style="font-size:11px; opacity:0.7;">Se guarda solo en este navegador. Por ahora es informativo — todavía no está conectada al servidor (eso lo hacemos en el próximo paso).</p>
       </div>
+
+      <div class="vistaAjuste" id="tabVoz">
+        <h3>Voz de Jarvis</h3>
+        <div class="card">
+          <p style="margin:0;">Actualmente usando Piper (español, procesado en el servidor). Próximamente: elegir entre voces.</p>
+        </div>
+      </div>
+
       <div class="vistaAjuste" id="tabUso">
         <h3>Uso de hoy</h3>
-        <p>Mensajes enviados hoy: <span id="usoHoy">0</span> de <span id="usoMeta">100</span></p>
-        <div class="usoBarraFondo"><div class="usoBarraRelleno" id="usoBarra"></div></div>
-        <p style="margin-top:12px; font-size:11px; opacity:0.7;">Se cuenta en este dispositivo y se reinicia cada día. Próximamente: uso real de la API por llave.</p>
+        <div class="card">
+          <p>Mensajes enviados hoy: <span id="usoHoy">0</span> de <span id="usoMeta">100</span></p>
+          <div class="usoBarraFondo"><div class="usoBarraRelleno" id="usoBarra"></div></div>
+        </div>
+        <p style="font-size:11px; opacity:0.7;">Se cuenta en este dispositivo y se reinicia cada día. Próximamente: uso real de la API por llave.</p>
       </div>
+
       <div class="vistaAjuste" id="tabAcerca">
         <h3>Acerca de J.A.R.V.I.S.</h3>
-        <p>Asistente personal construido por David. Gemini + Piper TTS.</p>
+        <div class="card">
+          <p style="margin:0;">Asistente personal construido por David. Gemini + Piper TTS.</p>
+        </div>
       </div>
+
     </div>
   </div>
 </div>
@@ -246,6 +308,41 @@ function actualizarUsoUI() {
 }
 actualizarUsoUI();
 
+/* --- Llave de Gemini (guardado local) --- */
+const campoLlave = document.getElementById('campoLlave');
+const badgeLlave = document.getElementById('badgeLlave');
+const btnGuardarLlave = document.getElementById('btnGuardarLlave');
+const btnVerLlave = document.getElementById('btnVerLlave');
+const btnBorrarLlave = document.getElementById('btnBorrarLlave');
+
+function actualizarBadgeLlave() {
+  const llave = localStorage.getItem('jarvisGeminiKey');
+  if (llave) {
+    badgeLlave.textContent = 'Conectada';
+    badgeLlave.classList.add('on');
+    campoLlave.value = llave;
+  } else {
+    badgeLlave.textContent = 'Sin conectar';
+    badgeLlave.classList.remove('on');
+    campoLlave.value = '';
+  }
+}
+actualizarBadgeLlave();
+
+btnGuardarLlave.addEventListener('click', () => {
+  const valor = campoLlave.value.trim();
+  if (!valor) return;
+  localStorage.setItem('jarvisGeminiKey', valor);
+  actualizarBadgeLlave();
+});
+btnBorrarLlave.addEventListener('click', () => {
+  localStorage.removeItem('jarvisGeminiKey');
+  actualizarBadgeLlave();
+});
+btnVerLlave.addEventListener('click', () => {
+  campoLlave.type = campoLlave.type === 'password' ? 'text' : 'password';
+});
+
 const audioPlayer = new Audio();
 audioPlayer.addEventListener('play', () => setEstado('hablando', 'Hablando'));
 audioPlayer.addEventListener('ended', () => setEstado('reposo', 'En reposo'));
@@ -326,7 +423,7 @@ if (SpeechRecognition) {
 
 // --- Panel de Ajustes ---
 const overlayAjustes = document.getElementById('overlayAjustes');
-document.getElementById('btnAjustes').addEventListener('click', () => { overlayAjustes.classList.add('abierto'); actualizarUsoUI(); });
+document.getElementById('btnAjustes').addEventListener('click', () => { overlayAjustes.classList.add('abierto'); actualizarUsoUI(); actualizarBadgeLlave(); });
 document.getElementById('btnCerrarPanel').addEventListener('click', () => overlayAjustes.classList.remove('abierto'));
 overlayAjustes.addEventListener('click', (e) => { if (e.target === overlayAjustes) overlayAjustes.classList.remove('abierto'); });
 
