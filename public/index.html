@@ -127,6 +127,10 @@
   .filaBtns { display: flex; gap: 8px; flex-wrap: wrap; }
   .usoBarraFondo { background: #05070d; border: 1px solid #00e5ff33; border-radius: 6px; height: 8px; overflow: hidden; margin-top: 6px; }
   .usoBarraRelleno { background: #00e5ff; height: 100%; width: 0%; transition: width 0.3s ease; }
+  .campoMeta {
+    width: 64px; background: #05070d; border: 1px solid #00e5ff33; border-radius: 6px;
+    color: #eafcff; font-family: inherit; font-size: 13px; padding: 2px 6px; outline: none;
+  }
 
   @media (min-width: 900px) {
     #orbCanvas { width: min(35vw, 50vh); height: min(35vw, 50vh); }
@@ -161,7 +165,6 @@
   </button>
   <button id="btnEnviar">➤</button>
 </div>
-
 <div id="overlayAjustes">
   <div id="panelAjustes">
     <div id="panelHeader">
@@ -231,8 +234,20 @@
       <div class="vistaAjuste" id="tabUso">
         <h3>Uso de hoy</h3>
         <div class="card">
-          <p>Mensajes enviados hoy: <span id="usoHoy">0</span> de <span id="usoMeta">100</span></p>
-          <div class="usoBarraFondo"><div class="usoBarraRelleno" id="usoBarra"></div></div>
+          <strong>Google Gemini</strong>
+          <p>Mensajes enviados hoy: <span id="usoHoyGemini">0</span> de
+            <input type="number" id="usoMetaGemini" class="campoMeta" min="1" value="500">
+          </p>
+          <div class="usoBarraFondo"><div class="usoBarraRelleno" id="usoBarraGemini"></div></div>
+          <p style="font-size:10px; opacity:0.6; margin:6px 0 0;">500/día confirmado para gemini-3.5-flash-lite (15 RPM). Verifica en aistudio.google.com/rate-limit si cambia.</p>
+        </div>
+        <div class="card">
+          <strong>Groq</strong>
+          <p>Mensajes enviados hoy: <span id="usoHoyGroq">0</span> de
+            <input type="number" id="usoMetaGroq" class="campoMeta" min="1" value="1000">
+          </p>
+          <div class="usoBarraFondo"><div class="usoBarraRelleno" id="usoBarraGroq"></div></div>
+          <p style="font-size:10px; opacity:0.6; margin:6px 0 0;">1000/día confirmado para openai/gpt-oss-120b (verifica en console.groq.com/settings/limits si cambia).</p>
         </div>
         <p style="font-size:11px; opacity:0.7;">Se cuenta en este dispositivo y se reinicia cada día. Próximamente: uso real de la API por llave.</p>
       </div>
@@ -314,30 +329,56 @@ function agregarMensaje(txt, clase) {
   return div;
 }
 
-/* --- Contador de Uso (local, por dia) --- */
-const USO_META_DIARIA = 100;
+/* --- Contador de Uso (local, por dia, por proveedor, con meta editable) --- */
+const METAS_POR_DEFECTO = { gemini: 500, groq: 1000 };
+function obtenerMeta(proveedor) {
+  const guardada = localStorage.getItem('jarvisMeta_' + proveedor);
+  return guardada ? parseInt(guardada, 10) : METAS_POR_DEFECTO[proveedor];
+}
+function guardarMeta(proveedor, valor) {
+  const num = parseInt(valor, 10);
+  if (!num || num < 1) return;
+  localStorage.setItem('jarvisMeta_' + proveedor, num);
+  actualizarUsoUI();
+}
 function obtenerUsoHoy() {
   const hoy = new Date().toISOString().slice(0, 10);
   let datos = {};
   try { datos = JSON.parse(localStorage.getItem('jarvisUso') || '{}'); } catch (e) {}
-  if (datos.fecha !== hoy) { datos = { fecha: hoy, contador: 0 }; }
+  if (datos.fecha !== hoy || !datos.contadores) {
+    datos = { fecha: hoy, contadores: { gemini: 0, groq: 0 } };
+  }
   return datos;
 }
-function incrementarUso() {
+function incrementarUso(proveedor) {
   const datos = obtenerUsoHoy();
-  datos.contador += 1;
+  if (!(proveedor in datos.contadores)) datos.contadores[proveedor] = 0;
+  datos.contadores[proveedor] += 1;
   localStorage.setItem('jarvisUso', JSON.stringify(datos));
   actualizarUsoUI();
 }
 function actualizarUsoUI() {
   const datos = obtenerUsoHoy();
-  const elHoy = document.getElementById('usoHoy');
-  const elBarra = document.getElementById('usoBarra');
-  if (elHoy) elHoy.textContent = datos.contador;
-  if (elBarra) elBarra.style.width = Math.min(100, (datos.contador / USO_META_DIARIA) * 100) + '%';
+  const elHoyGemini = document.getElementById('usoHoyGemini');
+  const elMetaGemini = document.getElementById('usoMetaGemini');
+  const elBarraGemini = document.getElementById('usoBarraGemini');
+  const elHoyGroq = document.getElementById('usoHoyGroq');
+  const elMetaGroq = document.getElementById('usoMetaGroq');
+  const elBarraGroq = document.getElementById('usoBarraGroq');
+  const cGemini = datos.contadores.gemini || 0;
+  const cGroq = datos.contadores.groq || 0;
+  const metaGemini = obtenerMeta('gemini');
+  const metaGroq = obtenerMeta('groq');
+  if (elHoyGemini) elHoyGemini.textContent = cGemini;
+  if (elMetaGemini && document.activeElement !== elMetaGemini) elMetaGemini.value = metaGemini;
+  if (elBarraGemini) elBarraGemini.style.width = Math.min(100, (cGemini / metaGemini) * 100) + '%';
+  if (elHoyGroq) elHoyGroq.textContent = cGroq;
+  if (elMetaGroq && document.activeElement !== elMetaGroq) elMetaGroq.value = metaGroq;
+  if (elBarraGroq) elBarraGroq.style.width = Math.min(100, (cGroq / metaGroq) * 100) + '%';
 }
 actualizarUsoUI();
-
+document.getElementById('usoMetaGemini').addEventListener('change', (e) => guardarMeta('gemini', e.target.value));
+document.getElementById('usoMetaGroq').addEventListener('change', (e) => guardarMeta('groq', e.target.value));
 /* --- Llaves de IA (guardado local) --- */
 const campoLlaveGemini = document.getElementById('campoLlaveGemini');
 const badgeLlaveGemini = document.getElementById('badgeLlaveGemini');
@@ -477,7 +518,7 @@ async function enviarMensaje() {
       setEstado('reposo', 'En reposo');
       return;
     }
-    incrementarUso();
+    incrementarUso(proveedor);
     const { textoLimpio, urls } = procesarAcciones(data.respuesta || '');
     agregarMensaje(textoLimpio, 'jarvis');
     hablar(textoLimpio);
