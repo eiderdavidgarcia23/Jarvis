@@ -16,10 +16,18 @@
   }
   body { display: flex; flex-direction: column; }
   header {
-    text-align: center; padding: clamp(8px, 2vh, 16px);
+    display: flex; align-items: center; justify-content: center; position: relative;
+    padding: clamp(8px, 2vh, 16px);
     font-size: clamp(16px, 4vw, 24px); letter-spacing: clamp(2px, 1vw, 6px);
     border-bottom: 1px solid #00e5ff33; flex-shrink: 0;
   }
+  #btnAjustes {
+    position: absolute; right: clamp(8px, 2vw, 16px); top: 50%; transform: translateY(-50%);
+    width: 34px; height: 34px; border-radius: 50%; background: transparent;
+    color: #00e5ff; border: 1px solid #00e5ff33; font-size: 16px;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  #btnAjustes:active { opacity: 0.7; }
   #orbContainer { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; position: relative; }
   #orbCanvas { width: min(70vw, 60vh); height: min(70vw, 60vh); max-width: 420px; max-height: 420px; }
   #estado { position: absolute; bottom: 6%; font-size: clamp(11px, 2.5vw, 14px); letter-spacing: 2px; opacity: 0.7; text-transform: uppercase; }
@@ -48,6 +56,38 @@
     display: flex; align-items: center; justify-content: center; padding: 0;
   }
   #btnEnviar:active { opacity: 0.7; }
+
+  /* --- Panel de Ajustes --- */
+  #overlayAjustes {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 50;
+  }
+  #overlayAjustes.abierto { display: block; }
+  #panelAjustes {
+    position: fixed; top: 0; right: 0; height: 100%; width: min(85vw, 340px);
+    background: #0a0e17; border-left: 1px solid #00e5ff33; z-index: 51;
+    display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform 0.25s ease;
+  }
+  #overlayAjustes.abierto #panelAjustes { transform: translateX(0); }
+  #panelHeader {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px; border-bottom: 1px solid #00e5ff33; flex-shrink: 0;
+  }
+  #panelHeader span { font-size: 15px; letter-spacing: 2px; }
+  #btnCerrarPanel { background: none; border: none; color: #00e5ff; font-size: 22px; padding: 0 6px; }
+  #tabsAjustes { display: flex; border-bottom: 1px solid #00e5ff33; flex-shrink: 0; }
+  .tabAjuste {
+    flex: 1; padding: 10px 4px; background: none; border: none; color: #00e5ff88;
+    font-family: inherit; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+    border-bottom: 2px solid transparent;
+  }
+  .tabAjuste.activo { color: #00e5ff; border-bottom-color: #00e5ff; }
+  #contenidoAjustes { flex: 1; overflow-y: auto; padding: 16px; font-size: 13px; line-height: 1.6; }
+  .vistaAjuste { display: none; }
+  .vistaAjuste.activo { display: block; }
+  .vistaAjuste h3 { font-size: 13px; letter-spacing: 1px; margin: 0 0 8px; color: #00e5ff; }
+  .vistaAjuste p { color: #b0e6f0; margin: 0 0 12px; }
+
   @media (min-width: 900px) {
     #orbCanvas { width: min(35vw, 50vh); height: min(35vw, 50vh); }
     #chat { max-height: 36vh; }
@@ -57,7 +97,10 @@
 </head>
 <body>
 
-<header>J.A.R.V.I.S.</header>
+<header>
+  J.A.R.V.I.S.
+  <button id="btnAjustes" title="Ajustes">&#9881;</button>
+</header>
 
 <div id="orbContainer">
   <canvas id="orbCanvas"></canvas>
@@ -77,6 +120,34 @@
     </svg>
   </button>
   <button id="btnEnviar">➤</button>
+</div>
+
+<div id="overlayAjustes">
+  <div id="panelAjustes">
+    <div id="panelHeader">
+      <span>AJUSTES</span>
+      <button id="btnCerrarPanel">&times;</button>
+    </div>
+    <div id="tabsAjustes">
+      <button class="tabAjuste activo" data-tab="voz">Voz</button>
+      <button class="tabAjuste" data-tab="uso">Uso</button>
+      <button class="tabAjuste" data-tab="acerca">Acerca de</button>
+    </div>
+    <div id="contenidoAjustes">
+      <div class="vistaAjuste activo" id="tabVoz">
+        <h3>Voz de Jarvis</h3>
+        <p>Actualmente usando Piper (español, procesado en el servidor). Próximamente: elegir entre voces.</p>
+      </div>
+      <div class="vistaAjuste" id="tabUso">
+        <h3>Uso de la API</h3>
+        <p>Próximamente: contador de tokens usados hoy.</p>
+      </div>
+      <div class="vistaAjuste" id="tabAcerca">
+        <h3>Acerca de J.A.R.V.I.S.</h3>
+        <p>Asistente personal construido por David. Gemini + Piper TTS.</p>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -223,6 +294,21 @@ if (SpeechRecognition) {
   recognition.onresult = (event) => { texto.value = event.results[0][0].transcript; enviarMensaje(); };
   recognition.onend = () => { escuchandoActivo = false; btnVoz.classList.remove('activo'); if (estadoActual === 'escuchando') setEstado('reposo', 'En reposo'); };
 } else { btnVoz.style.display = 'none'; }
+
+// --- Panel de Ajustes ---
+const overlayAjustes = document.getElementById('overlayAjustes');
+document.getElementById('btnAjustes').addEventListener('click', () => overlayAjustes.classList.add('abierto'));
+document.getElementById('btnCerrarPanel').addEventListener('click', () => overlayAjustes.classList.remove('abierto'));
+overlayAjustes.addEventListener('click', (e) => { if (e.target === overlayAjustes) overlayAjustes.classList.remove('abierto'); });
+
+document.querySelectorAll('.tabAjuste').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabAjuste').forEach(b => b.classList.remove('activo'));
+    document.querySelectorAll('.vistaAjuste').forEach(v => v.classList.remove('activo'));
+    btn.classList.add('activo');
+    document.getElementById('tab' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1)).classList.add('activo');
+  });
+});
 </script>
 
 <script>
