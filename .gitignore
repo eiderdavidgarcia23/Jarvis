@@ -1,11 +1,12 @@
+__pycache__/
+*.pyc
 node_modules/
 .env
-memoria.json
-memorias/
-recordatorios/
+memoria_local.json
+memoria_persistente.json
+recordatorios.json
 preferencias/
 piper/
 piper_voices/
-server.js.backup*
-patch*.py
+jarvis_log.txt
 firebase-credenciales.json
